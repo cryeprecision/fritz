@@ -1,0 +1,25 @@
+[package]
+name = "fritz-log-parser"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
+log = { version = "0" }
+simplelog = { version = "0" }
+thiserror = { version = "1" }
+anyhow = { version = "1" }
+chrono = { version = "0" }
+lazy-regex = { version = "2" }
+simple-error = { version = "0" }
+pbkdf2 = { version = "0" }
+hex = { version = "0" }
+sha2 = { version = "0" }
+tokio = { version = "1", features = ["rt", "macros", "fs", "process"] }
+reqwest = { version = "0", default-features = false, features = ["rustls-tls"] }
+roxmltree = { version = "0" }
+dialoguer = { version = "0" }
+rusqlite = { version = "0", features = ["bundled"] }
