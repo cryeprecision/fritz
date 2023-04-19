@@ -121,7 +121,7 @@ impl Session {
     }
     pub async fn login(client: &Client, username: &str, password: &[u8]) -> Result<Session> {
         let ch = Self::get_challenge(client).await?;
-        Self::get_session_id(client, username, &ch.hash(password)).await
+        Self::get_session_id(client, username, &ch.response(password).to_string()).await
     }
     pub async fn logout(self, client: &Client) -> Result<()> {
         const URL: &str = "https://fritz.box/login_sid.lua?version=2";

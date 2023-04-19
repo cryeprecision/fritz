@@ -1,5 +1,6 @@
 use sha2::Sha256;
-use std::{num::ParseIntError, str::FromStr};
+use std::num::ParseIntError;
+use std::str::{FromStr, Split};
 use thiserror::Error;
 
 #[derive(Debug, Default)]
@@ -22,6 +23,20 @@ pub struct Challenge {
     pub dynamic: Pbkdf2Params,
 }
 
+#[derive(Debug)]
+pub struct Response {
+    pub salt: [u8; 16],
+    pub hash: [u8; 32],
+}
+
+impl std::fmt::Display for Response {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let salt = hex::encode(self.salt);
+        let hash = hex::encode(self.hash);
+        write!(f, "{salt}${hash}")
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum ChallengeParseError {
     #[error("invalid format")]
@@ -33,20 +48,21 @@ pub enum ChallengeParseError {
     #[error("couldn't parse iterations: {0}")]
     Iterations(#[from] ParseIntError),
 }
+type ChallengeParseResult<T> = std::result::Result<T, ChallengeParseError>;
 
 impl FromStr for Challenge {
     type Err = ChallengeParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let splits = s.split('$').collect::<Vec<_>>();
-        if splits.len() != 5 {
-            return Err(ChallengeParseError::Format);
+        fn next_split<'a>(s: &mut Split<'a, char>) -> ChallengeParseResult<&'a str> {
+            s.next().ok_or(ChallengeParseError::Format)
         }
 
-        let version = splits[0];
-        let static_iter = splits[1];
-        let static_salt = splits[2];
-        let dynamic_iter = splits[3];
-        let dynamic_salt = splits[4];
+        let mut splits = s.split('$');
+        let version = next_split(&mut splits)?;
+        let static_iter = next_split(&mut splits)?;
+        let static_salt = next_split(&mut splits)?;
+        let dynamic_iter = next_split(&mut splits)?;
+        let dynamic_salt = next_split(&mut splits)?;
 
         if version != "2" {
             return Err(ChallengeParseError::Version);
@@ -72,12 +88,13 @@ impl FromStr for Challenge {
 }
 
 impl Challenge {
-    pub fn hash(&self, password: &[u8]) -> String {
+    pub fn response(&self, password: &[u8]) -> Response {
         let static_hash = self.statick.hash(password);
         let dynamic_hash = self.dynamic.hash(&static_hash);
-        let dynamic_salt_hex = hex::encode(self.dynamic.salt);
-        let dynamic_hash_hex = hex::encode(dynamic_hash);
-        format!("{dynamic_salt_hex}${dynamic_hash_hex}")
+        Response {
+            salt: self.dynamic.salt,
+            hash: dynamic_hash,
+        }
     }
 }
 
@@ -128,8 +145,8 @@ mod tests {
             ]
         );
 
-        let response = ch.hash(b"vorab9049");
-        assert_eq!(response, RESPONSE);
+        let response = ch.response(b"vorab9049");
+        assert_eq!(response.to_string(), RESPONSE);
     }
 
     #[test]
@@ -140,7 +157,7 @@ mod tests {
 
         println!(
             "{:#?}",
-            Challenge::from_str(CHALLENGE).unwrap().hash(PASSWORD)
+            Challenge::from_str(CHALLENGE).unwrap().response(PASSWORD)
         );
     }
 }

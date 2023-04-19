@@ -45,9 +45,9 @@ pub async fn main() {
 
     let username = prompt_username(&users).await;
     let password = prompt_password(&username).await;
-    let response = challenge.hash(&password);
+    let response = challenge.response(&password);
 
-    let session = Session::get_session_id(&client, &username, &response)
+    let session = Session::get_session_id(&client, &username, &response.to_string())
         .await
         .unwrap();
     println!("session: {:?}", session.id);

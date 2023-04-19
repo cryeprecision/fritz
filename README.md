@@ -12,6 +12,14 @@
   - [rust.helpful.codes/tutorials/reqwest/Sending-Form-Data-and-Uploading-Files-with-Reqwest](https://rust.helpful.codes/tutorials/reqwest/Sending-Form-Data-and-Uploading-Files-with-Reqwest/)
   - [cryptii.com/pipes/integer-encoder](https://cryptii.com/pipes/integer-encoder)
 
+## Logic
+
+### Login
+
+- Response has block-time greater zero
+  - Either someone else entered a wrong password and we just have to wait
+  - Or our password is incorrect and we're the reason for the block time
+
 ## Structure
 
 ### Log entry
@@ -39,6 +47,24 @@ There are five categories for log messages
 
 ### Table structures
 
+[dbdiagram.io](https://dbdiagram.io/) schema
+
+```text
+Table logs {
+  id integer [primary key]
+  message_id integer
+  logged_at timestamp
+  message varchar
+}
+```
+
+SQL schema
+
 ```sql
--- TODO
+CREATE TABLE `logs` (
+  `id` integer PRIMARY KEY,
+  `message_id` integer,
+  `logged_at` timestamp,
+  `message` varchar
+);
 ```

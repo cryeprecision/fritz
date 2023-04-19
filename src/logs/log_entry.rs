@@ -53,7 +53,7 @@ pub struct LogEntry {
     pub time: DateTime<Local>,
     pub msg: LogMsg,
     pub raw_msg: String,
-    pub err_id: u32,
+    pub msg_id: u32,
 }
 
 impl Display for LogEntry {
@@ -92,14 +92,14 @@ impl LogEntry {
     fn parse_entry(arr: [String; 6]) -> Result<LogEntry> {
         let entry = RawLogEntry::from(arr);
         let time = Self::parse_time(&entry).context("couldn't parse date/time")?;
-        let err_id = u32::from_str(&entry.msg_id).context("couldn't parse error message id")?;
+        let msg_id = u32::from_str(&entry.msg_id).context("couldn't parse error message id")?;
         let msg = LogMsg::from_log_entry(&entry).context("couldn't parse into log msg")?;
 
         Ok(LogEntry {
             time,
             msg,
             raw_msg: entry.msg,
-            err_id,
+            msg_id,
         })
     }
 
