@@ -45,26 +45,51 @@ There are five categories for log messages
 
 ## SqLite Database
 
-### Table structures
+```sql
+CREATE TABLE logs(
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    message    VARCHAR NOT NULL,
+    message_id INTEGER NOT NULL,
+    category   INTEGER NOT NULL,
+    logged_at  INTEGER NOT NULL
+);
 
-[dbdiagram.io](https://dbdiagram.io/) schema
+-- fast lookup of newest logs
+CREATE INDEX IF NOT EXISTS
+    logs_logged_at_index
+ON logs (logged_at DESC);
+
+-- the combination of `logged_at` and `message_id` must be unique
+CREATE UNIQUE INDEX IF NOT EXISTS
+    logs_unique_index
+ON logs (logged_at DESC, message_id);
+```
+
+### Sorting (`I`)
+
+There are some seemingly unnecessary `ORDER BY` directives when selecting rows,
+but we want to make sure that the result is always ordered as they'd be in the original
+FRITZ!Box log and the optimizer can always remove it if it's really obsolete.
+
+- The FRITZ!Box outputs logs sorted from new to old.
+- Database stores logs from old to new. If two entries have the
+  same timestamp, the one with the **greater row id** is the **newer** one.
+
+Multiple log entries can have the same timestamp, e.g.
 
 ```text
-Table logs {
-  id integer [primary key]
-  message_id integer
-  logged_at timestamp
-  message varchar
-}
+(A): 2023-04-14T10:07:39+02:00 [1] -- in db
+(B): 2023-04-14T10:07:39+02:00 [2] -- in db
+(C): 2023-04-14T10:07:39+02:00 [3] -- new
+(D): 2023-04-14T10:07:39+02:00 [4] -- new
 ```
 
-SQL schema
+In order to keep the database in sync with the FRITZ!Box logs,
+old logs cannot be inserted retroactively. Because if there are logs `[a, b, c, d]`
+and the database already contains logs `[c, d]` you cannot insert logs `[a, b]`
+anymore, because if log `b` and `c` have the same timestamp, we cannot ensure original order.
 
-```sql
-CREATE TABLE `logs` (
-  `id` integer PRIMARY KEY,
-  `message_id` integer,
-  `logged_at` timestamp,
-  `message` varchar
-);
-```
+### Sorting (`II`)
+
+Because of the problem stated above, it is theoretically possible that some of the entries
+with the same timestamp will never get added to the database. Altough this is very unlikely.

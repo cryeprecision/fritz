@@ -1,6 +1,6 @@
 use crate::logs::traits::FromLogMsg;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PhoneMsg {
     Unknown,
 }

@@ -2,7 +2,7 @@ use std::fmt::Display;
 use std::str::FromStr;
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Duration, Local, ParseError};
+use chrono::{DateTime, Duration, Local, ParseError, TimeZone};
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use reqwest::Client;
 use serde::Deserialize;
@@ -48,7 +48,7 @@ struct Response {
 }
 
 /// The whole log entry
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogEntry {
     pub time: DateTime<Local>,
     pub msg: LogMsg,
@@ -56,12 +56,29 @@ pub struct LogEntry {
     pub msg_id: u32,
 }
 
+impl LogEntry {
+    pub fn new(raw_msg: String, msg_id: u32, category: u32, time: i64) -> LogEntry {
+        let time = Local.timestamp_opt(time, 0).unwrap();
+        let msg = LogMsg::from_category_and_msg(category, &raw_msg).unwrap();
+
+        LogEntry {
+            time,
+            msg,
+            raw_msg,
+            msg_id,
+        }
+    }
+}
+
 impl Display for LogEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let age = self.age(&Local::now());
-        let hours = age.num_hours();
+        let days = age.num_days();
+        let hours = age.num_hours() % 24;
         let minutes = age.num_minutes() % 60;
-        write!(f, "{:02}h {:02}m - {:?}", hours, minutes, self.msg)
+        let seconds = age.num_seconds() % 60;
+        write!(f, "{days:02}d {hours:02}h {minutes:02}m {seconds:02}s")?;
+        write!(f, " - {:?}", self.msg)
     }
 }
 
@@ -109,9 +126,17 @@ impl LogEntry {
             .data
             .logs;
 
-        logs.into_iter()
+        let mut logs = logs
+            .into_iter()
             .map(Self::parse_entry)
-            .collect::<Result<Vec<LogEntry>>>()
+            .collect::<Result<Vec<_>>>()?;
+
+        // sorted from old to new instead of from new to old
+        // while keeping the order between elements with the
+        // same timestamp.
+        logs.reverse();
+
+        Ok(logs)
     }
 
     pub fn age(&self, now: &DateTime<Local>) -> Duration {

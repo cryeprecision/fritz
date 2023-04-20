@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::logs::traits::FromLogMsg;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectedDetails {
     pub ip: Ipv4Addr,
     pub dns: [Ipv4Addr; 2],
@@ -52,7 +52,7 @@ impl FromStr for ConnectedDetails {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DslReadyDeatils {
     /// in `kbit/s`
     pub up: u32,
@@ -86,7 +86,7 @@ impl FromStr for DslReadyDeatils {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InternetMsg {
     /// German: `Internetverbindung wurde getrennt.`
     /// German: `Verbindung getrennt: ...`

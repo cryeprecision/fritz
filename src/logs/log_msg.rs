@@ -12,7 +12,7 @@ use super::message::WlanMsg;
 use super::traits::{FromLogEntry, FromLogMsg};
 
 /// Only the message part of the log entry
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LogMsg {
     /// German: `System`
     System(SystemMsg),
@@ -45,29 +45,43 @@ pub enum ParseLogMsgError {
 }
 type ParseLogMsgResult<T> = std::result::Result<T, ParseLogMsgError>;
 
-impl FromLogEntry for LogMsg {
-    type Err = ParseLogMsgError;
-    fn from_log_entry(entry: &RawLogEntry) -> Result<Self, Self::Err> {
-        match u32::from_str(&entry.category).map_err(ParseLogMsgError::CategoryParse)? {
+impl LogMsg {
+    pub fn from_category_and_msg(category: u32, msg: &str) -> Result<Self, ParseLogMsgError> {
+        match category {
             1 => Ok(LogMsg::System(
-                SystemMsg::from_log_msg(&entry.msg)
-                    .map_err(|_| ParseLogMsgError::SystemMsgError)?,
+                SystemMsg::from_log_msg(msg).map_err(|_| ParseLogMsgError::SystemMsgError)?,
             )),
             2 => Ok(LogMsg::Internet(
-                InternetMsg::from_log_msg(&entry.msg)
-                    .map_err(|_| ParseLogMsgError::InternetMsgError)?,
+                InternetMsg::from_log_msg(msg).map_err(|_| ParseLogMsgError::InternetMsgError)?,
             )),
             3 => Ok(LogMsg::Phone(
-                PhoneMsg::from_log_msg(&entry.msg).map_err(|_| ParseLogMsgError::PhoneMsgError)?,
+                PhoneMsg::from_log_msg(msg).map_err(|_| ParseLogMsgError::PhoneMsgError)?,
             )),
             4 => Ok(LogMsg::Wlan(
-                WlanMsg::from_log_msg(&entry.msg).map_err(|_| ParseLogMsgError::WlanMsgError)?,
+                WlanMsg::from_log_msg(msg).map_err(|_| ParseLogMsgError::WlanMsgError)?,
             )),
             5 => Ok(LogMsg::Usb(
-                UsbMsg::from_log_msg(&entry.msg).map_err(|_| ParseLogMsgError::UsbMsgError)?,
+                UsbMsg::from_log_msg(msg).map_err(|_| ParseLogMsgError::UsbMsgError)?,
             )),
             num => Err(ParseLogMsgError::CategoryOutOfRange(num)),
         }
+    }
+    pub fn category(&self) -> u32 {
+        match self {
+            LogMsg::System(_) => 1,
+            LogMsg::Internet(_) => 2,
+            LogMsg::Phone(_) => 3,
+            LogMsg::Wlan(_) => 4,
+            LogMsg::Usb(_) => 5,
+        }
+    }
+}
+
+impl FromLogEntry for LogMsg {
+    type Err = ParseLogMsgError;
+    fn from_log_entry(entry: &RawLogEntry) -> Result<Self, Self::Err> {
+        let category = u32::from_str(&entry.category).map_err(ParseLogMsgError::CategoryParse)?;
+        LogMsg::from_category_and_msg(category, &entry.msg)
     }
 }
 
