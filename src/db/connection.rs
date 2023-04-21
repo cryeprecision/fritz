@@ -189,7 +189,7 @@ mod tests {
     }
 
     #[test]
-    fn logs_insert_logic() {
+    fn logs_insert_logic_wrong_order() {
         let db = Connection::open_in_memory().unwrap();
         db.create_logs_table().unwrap();
 
@@ -210,9 +210,21 @@ mod tests {
         // because the old logs from `example_logs.json` should be rejected
         // since they are older
         entries_equal!(parsed_2, fetched);
+    }
 
-        db.drop_logs_table().unwrap();
+    #[test]
+    fn test_insert_logic_correct_order() {
+        let db = Connection::open_in_memory().unwrap();
         db.create_logs_table().unwrap();
+
+        // `example_logs.json` and `example_logs_2.json` are disjunct
+        // and `example_logs_2.json` contains newer logs
+
+        let data_1 = std::fs::read_to_string("./example_logs.json").unwrap();
+        let parsed_1 = LogEntry::from_json(&data_1).unwrap();
+
+        let data_2 = std::fs::read_to_string("./example_logs_2.json").unwrap();
+        let parsed_2 = LogEntry::from_json(&data_2).unwrap();
 
         db.append_logs(&parsed_1).unwrap();
         db.append_logs(&parsed_2).unwrap();
