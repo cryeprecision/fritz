@@ -189,10 +189,12 @@ mod tests {
     }
 
     #[test]
-    fn tabless() {
-        let db = Connection::open("./test_logs.db3").unwrap();
-        db.drop_logs_table().unwrap();
+    fn logs_insert_logic() {
+        let db = Connection::open_in_memory().unwrap();
         db.create_logs_table().unwrap();
+
+        // `example_logs.json` and `example_logs_2.json` are disjunct
+        // and `example_logs_2.json` contains newer logs
 
         let data_1 = std::fs::read_to_string("./example_logs.json").unwrap();
         let parsed_1 = LogEntry::from_json(&data_1).unwrap();
@@ -204,6 +206,9 @@ mod tests {
         db.append_logs(&parsed_1).unwrap();
         let fetched = db.newest_logs(None).unwrap();
 
+        // should only contain entries from `example_logs_2.json`
+        // because the old logs from `example_logs.json` should be rejected
+        // since they are older
         entries_equal!(parsed_2, fetched);
 
         db.drop_logs_table().unwrap();
@@ -216,24 +221,9 @@ mod tests {
         let mut parsed_combined = parsed_1.clone();
         parsed_combined.extend_from_slice(&parsed_2);
 
+        // should contain all entries since they were now inserted
+        // in the correct oder
         entries_equal!(fetched, parsed_combined);
-    }
-
-    #[test]
-    fn tables() {
-        let db = Connection::open_in_memory().unwrap();
-        db.create_logs_table().unwrap();
-
-        let data = std::fs::read_to_string("./example_logs.json").unwrap();
-        let parsed = LogEntry::from_json(&data).unwrap();
-
-        // db.append_logs(&parsed).unwrap();
-        let fetched = db.newest_logs(None).unwrap();
-
-        assert_eq!(fetched.len(), parsed.len());
-        for (fetched, parsed) in fetched.iter().zip(parsed.iter()) {
-            assert_eq!(fetched, parsed, "fetched != parsed");
-        }
     }
 
     #[test]
