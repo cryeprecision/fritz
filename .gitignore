@@ -1,3 +1,4 @@
 /target
 /example_*.*
 /test_logs.db3
+/logs.db3

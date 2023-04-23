@@ -84,7 +84,7 @@ impl Connection {
         }
     }
 
-    pub fn append_logs(&self, entries: &[LogEntry]) -> Result<()> {
+    pub fn append_logs(&self, entries: &[LogEntry]) -> Result<usize> {
         // TODO: replace this with `is_sorted` once that is stable
         assert!(entries.windows(2).all(|e| e[0].time <= e[1].time));
 
@@ -92,9 +92,13 @@ impl Connection {
         match latest {
             Some(latest) => {
                 let new_entries = Self::new_entries(&latest, entries);
-                self.append_logs_impl(new_entries)
+                self.append_logs_impl(new_entries)?;
+                Ok(new_entries.len())
             }
-            None => self.append_logs_impl(entries),
+            None => {
+                self.append_logs_impl(entries)?;
+                Ok(entries.len())
+            }
         }
     }
 
@@ -136,7 +140,7 @@ impl Connection {
         entries.collect()
     }
 
-    fn create_logs_table(&self) -> Result<()> {
+    pub fn create_logs_table(&self) -> Result<()> {
         // create the main table structure
         self.inner.execute(
             "CREATE TABLE IF NOT EXISTS logs(
@@ -162,7 +166,7 @@ impl Connection {
         )?;
         Ok(())
     }
-    fn drop_logs_table(&self) -> Result<()> {
+    pub fn drop_logs_table(&self) -> Result<()> {
         self.inner.execute("DROP TABLE IF EXISTS logs", ())?;
         Ok(())
     }
@@ -233,7 +237,7 @@ mod tests {
         let mut parsed_combined = parsed_1.clone();
         parsed_combined.extend_from_slice(&parsed_2);
 
-        // should contain all entries since they were now inserted
+        // should contain all entries since they were inserted
         // in the correct oder
         entries_equal!(fetched, parsed_combined);
     }
