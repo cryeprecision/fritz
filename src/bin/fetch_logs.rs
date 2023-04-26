@@ -1,10 +1,12 @@
+use anyhow::Context;
+use dialoguer::theme::ColorfulTheme;
 use fritz_log_parser::logs::LogEntry;
-use fritz_log_parser::{Connection, Session};
+use fritz_log_parser::{logger, Client, Connection};
 
 pub async fn prompt_username(usernames: &[String]) -> String {
     let usernames_copy = usernames.to_vec();
     tokio::task::spawn_blocking(move || {
-        let index = dialoguer::Select::with_theme(&dialoguer::theme::ColorfulTheme::default())
+        let index = dialoguer::Select::with_theme(&ColorfulTheme::default())
             .with_prompt("Select a user")
             .clear(true)
             .default(0)
@@ -20,7 +22,7 @@ pub async fn prompt_username(usernames: &[String]) -> String {
 pub async fn prompt_password(username: &str) -> Vec<u8> {
     let prompt = format!("Enter password for `{username}`");
     tokio::task::spawn_blocking(move || {
-        dialoguer::Password::with_theme(&dialoguer::theme::ColorfulTheme::default())
+        dialoguer::Password::with_theme(&ColorfulTheme::default())
             .with_prompt(&prompt)
             .allow_empty_password(false)
             .report(true)
@@ -34,43 +36,31 @@ pub async fn prompt_password(username: &str) -> Vec<u8> {
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn main() {
-    let db = Connection::open("./logs.db3").unwrap();
-    db.create_logs_table().unwrap();
-
-    if db.latest_logs(Some(1)).unwrap().is_empty() {
-        println!("db empty, appending example logs");
-
-        let data_1 = std::fs::read_to_string("./example_logs.json").unwrap();
-        let parsed_1 = LogEntry::from_json(&data_1).unwrap();
-
-        let data_2 = std::fs::read_to_string("./example_logs_2.json").unwrap();
-        let parsed_2 = LogEntry::from_json(&data_2).unwrap();
-
-        db.append_logs(&parsed_1).unwrap();
-        db.append_logs(&parsed_2).unwrap();
-    }
-
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
+    logger::init()
+        .context("couldn't initialize logger")
         .unwrap();
 
-    let (challenge, users) = Session::get_challenge_and_users(&client).await.unwrap();
-    println!("got the challenge");
+    let db = Connection::open("./logs.db3")
+        .context("couldn't open logs database file")
+        .unwrap();
 
-    let username = prompt_username(&users).await;
+    db.create_logs_table()
+        .context("couldn't create logs table")
+        .unwrap();
+
+    let client = Client::new();
+
+    let session_response = client.session_response().await.unwrap();
+
+    let username = prompt_username(&session_response.users).await;
     let password = prompt_password(&username).await;
-    let response = challenge.response(&password);
+    let response = session_response.challenge.response(&password);
 
-    let session = Session::get_session_id(&client, &username, &response.to_string())
-        .await
-        .unwrap();
-    println!("session: {:?}", session.id);
+    let session = client.session_id(&username, response).await.unwrap();
 
-    let logs = LogEntry::fetch(&client, &session).await.unwrap();
-    println!("fetched logs ({})", logs.len());
+    let logs = LogEntry::fetch(&client.0, &session).await.unwrap();
 
-    session.logout(&client).await.unwrap();
+    client.logout(session).await.unwrap();
     println!("logged out");
 
     let new_count = db.append_logs(&logs).unwrap();

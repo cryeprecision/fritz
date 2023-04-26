@@ -11,7 +11,7 @@ use thiserror::Error;
 use super::log_msg::LogMsg;
 use super::traits::FromLogEntry;
 
-use crate::Session;
+use crate::SessionId;
 
 pub struct RawLogEntry {
     pub date: String,
@@ -143,7 +143,7 @@ impl LogEntry {
         now.signed_duration_since(self.time)
     }
 
-    pub async fn fetch(client: &Client, session: &Session) -> Result<Vec<LogEntry>> {
+    pub async fn fetch(client: &Client, session: &SessionId) -> Result<Vec<LogEntry>> {
         const URL: &str = "https://fritz.box/data.lua";
 
         let form = [

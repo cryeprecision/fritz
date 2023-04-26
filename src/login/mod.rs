@@ -1,4 +1,8 @@
 mod challenge;
+
+mod client;
+pub use client::Client;
+
 pub use challenge::*;
 
 mod session;

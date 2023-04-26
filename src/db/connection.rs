@@ -120,6 +120,14 @@ impl Connection {
         })?;
         entries.collect()
     }
+    pub fn is_empty(&self) -> Result<bool> {
+        // https://dba.stackexchange.com/a/223286
+        let mut stmt = self.inner.prepare(
+            "SELECT count(*)
+                FROM (SELECT 0 from logs LIMIT 1)",
+        )?;
+        stmt.query_row((), |row| Ok(row.get::<_, i32>(0)? == 0))
+    }
 
     pub fn newest_logs(&self, limit: Option<i64>) -> Result<Vec<LogEntry>> {
         let limit = limit.unwrap_or(i64::MAX).max(1);

@@ -1,135 +1,233 @@
-use std::time::Duration;
+use std::num::ParseIntError;
 use std::{fmt::Display, str::FromStr};
 
 use anyhow::{Context, Result};
-use log::warn;
 use reqwest::Client;
-use roxmltree::Document;
+use roxmltree::{Document, Node};
 use thiserror::Error;
 
-use super::{challenge::Challenge, xml};
+use crate::xml::{find_node_by_tag, find_text_by_tag};
+use crate::{ChallengeParseError, Response};
 
-#[derive(Debug)]
-pub struct Session {
-    pub id: [u8; 8],
+use super::challenge::Challenge;
+
+/// `<Access>`
+#[derive(Debug, PartialEq, Eq)]
+pub enum Permission {
+    /// `1`
+    ReadOnly,
+    /// `2`
+    ReadWrite,
 }
 
-impl Display for Session {
+#[derive(Debug, Error)]
+pub enum PermissionParseError {
+    #[error("couldn't parse integer number")]
+    Parse(#[from] ParseIntError),
+    #[error("number doesn't correspond to a permission")]
+    OutOfRange,
+}
+
+impl FromStr for Permission {
+    type Err = PermissionParseError;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.parse::<i32>()? {
+            1 => Ok(Permission::ReadOnly),
+            2 => Ok(Permission::ReadWrite),
+            _ => Err(PermissionParseError::OutOfRange),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Permissions {
+    /// `<Name>Dial</Name>`
+    dial: Permission,
+    /// `<Name>App</Name>`
+    app: Permission,
+    /// `<Name>HomeAuto</Name>`
+    home_auto: Permission,
+    /// `<Name>BoxAdmin</Name>`
+    box_admin: Permission,
+    /// `<Name>Phone</Name>`
+    phone: Permission,
+    /// `<Name>NAS</Name>`
+    nas: Permission,
+}
+
+#[derive(Debug, Error)]
+pub enum PermissionsParseError {
+    #[error("encountered a node without text")]
+    NoText,
+    #[error("unexpected number of nodes")]
+    Length,
+    #[error("unexpected permission name")]
+    PermissionName,
+    #[error("couldn't parse permission value")]
+    PermissionValue(#[from] PermissionParseError),
+}
+type PermissionsParseResult<T> = std::result::Result<T, PermissionsParseError>;
+
+impl Permissions {
+    /// `node`: `<Rights>...</Rights>`
+    pub fn from_rights_node(node: &Node) -> PermissionsParseResult<Option<Permissions>> {
+        const EXPECTED_NODE_COUNT: usize = 12;
+        const EXPECTED_NODE_NAMES: [&str; 6] =
+            ["Dial", "App", "HomeAuto", "BoxAdmin", "Phone", "NAS"];
+
+        if !node.has_children() {
+            return Ok(None);
+        }
+
+        let values = node
+            .children()
+            .filter(|n| n.is_element())
+            .map(|n| n.text())
+            .collect::<Option<Vec<_>>>()
+            .ok_or(PermissionsParseError::NoText)?;
+
+        if values.len() != EXPECTED_NODE_COUNT {
+            return Err(PermissionsParseError::Length);
+        }
+
+        let mut result_iter = values.chunks_exact(2);
+        let mut expected_name_iter = EXPECTED_NODE_NAMES.iter();
+        let mut next = || -> PermissionsParseResult<Permission> {
+            let kv = result_iter.next().unwrap();
+            if kv[0] != *expected_name_iter.next().unwrap() {
+                return Err(PermissionsParseError::PermissionName);
+            }
+            Ok(Permission::from_str(kv[1])?)
+        };
+
+        Ok(Some(Permissions {
+            dial: next()?,
+            app: next()?,
+            home_auto: next()?,
+            box_admin: next()?,
+            phone: next()?,
+            nas: next()?,
+        }))
+    }
+}
+
+#[derive(Debug)]
+pub struct SessionResponse {
+    /// `<SID>`
+    pub session_id: Option<SessionId>,
+    /// `<Challenge>`
+    pub challenge: Challenge,
+    /// `<BlockTime>`
+    pub block_time: u32,
+    /// `<Rights>`
+    pub permissions: Option<Permissions>,
+    /// `<Users>`
+    pub users: Vec<String>,
+}
+
+#[derive(Debug, Error)]
+pub enum SessionResponseParseError {
+    #[error("couldn't find node: {0}")]
+    MissingNode(#[from] crate::xml::Error),
+    #[error("user tag has no text content")]
+    NoText,
+    #[error("couldn't parse permissions: {0}")]
+    Permissions(#[from] PermissionsParseError),
+    #[error("couldn't parse session id: {0}")]
+    SessionId(#[from] SessionIdParseError),
+    #[error("couldn't parse challenge: {0}")]
+    Challenge(#[from] ChallengeParseError),
+    #[error("couldn't parse block time: {0}")]
+    BlockTime(#[from] ParseIntError),
+}
+type SessionResponseParseResult<T> = std::result::Result<T, SessionResponseParseError>;
+
+impl SessionResponse {
+    pub fn from_xml(doc: &Document) -> SessionResponseParseResult<SessionResponse> {
+        let session_info = find_node_by_tag(doc.root(), "SessionInfo")?;
+        let session_id = find_text_by_tag(session_info, "SID")?;
+        let challenge = find_text_by_tag(session_info, "Challenge")?;
+        let block_time = find_text_by_tag(session_info, "BlockTime")?;
+        let rights = find_node_by_tag(session_info, "Rights")?;
+        let users = find_node_by_tag(session_info, "Users")?;
+
+        // Zero id corresponds to None
+        let session_id = match SessionId::from_str(session_id) {
+            Err(err) => match err {
+                SessionIdParseError::Zero => Ok(None),
+                err @ SessionIdParseError::Id(_) => Err(err),
+            },
+            Ok(id) => Ok(Some(id)),
+        }?;
+
+        let challenge = Challenge::from_str(challenge)?;
+        let block_time = block_time.parse::<u32>()?;
+        let permissions = Permissions::from_rights_node(&rights)?;
+        let users = users
+            .children()
+            .filter(|n| n.is_element() && n.has_tag_name("User"))
+            .map(|n| n.text().map(str::to_string))
+            .collect::<Option<Vec<_>>>()
+            .ok_or(SessionResponseParseError::NoText)?;
+
+        Ok(SessionResponse {
+            session_id,
+            challenge,
+            block_time,
+            permissions,
+            users,
+        })
+    }
+    pub async fn fetch_challenge(client: &Client) -> Result<SessionResponse> {
+        const URL: &str = "https://fritz.box/login_sid.lua?version=2";
+        let req = client.get(URL);
+        let resp = req.send().await?.text().await?;
+        let xml = Document::parse(&resp).context("couldn't parse challenge response xml")?;
+        Ok(Self::from_xml(&xml)?)
+    }
+    pub async fn fetch_session_id(
+        client: &Client,
+        username: &str,
+        response: Response,
+    ) -> Result<SessionResponse> {
+        const URL: &str = "https://fritz.box/login_sid.lua?version=2";
+
+        let form: [(&str, &str); 2] = [("username", username), ("response", &response.to_string())];
+
+        let req = client.post(URL).form(&form);
+        // request body is not a stream so it should always be cloneable
+        let resp = req.try_clone().unwrap().send().await?.text().await?;
+        let xml = Document::parse(&resp).context("couldn't parse session id response xml")?;
+        Ok(Self::from_xml(&xml)?)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct SessionId(pub [u8; 8]);
+
+impl Display for SessionId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&hex::encode(self.id))
+        f.write_str(&hex::encode(self.0))
     }
 }
 
 #[derive(Debug, Error)]
-pub enum SessionParseError {
+pub enum SessionIdParseError {
     #[error("invalid id: {0}")]
     Id(#[from] hex::FromHexError),
     #[error("zero id is never valid")]
     Zero,
 }
 
-impl FromStr for Session {
-    type Err = SessionParseError;
+impl FromStr for SessionId {
+    type Err = SessionIdParseError;
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         let mut id = [0u8; 8];
         hex::decode_to_slice(s, &mut id)?;
         if id.iter().all(|&b| b == 0) {
-            return Err(SessionParseError::Zero);
+            return Err(SessionIdParseError::Zero);
         }
-        Ok(Session { id })
-    }
-}
-
-impl Session {
-    fn xml_get_challenge(doc: &Document) -> Result<Challenge> {
-        let session_info = xml::find_node_by_tag(doc.root(), "SessionInfo")?;
-        let challenge = xml::find_text_by_tag(session_info, "Challenge")?;
-        Challenge::from_str(challenge).context("couldn't parse challenge from xml")
-    }
-    fn xml_get_block_time(doc: &Document) -> Result<u32> {
-        let session_info = xml::find_node_by_tag(doc.root(), "SessionInfo")?;
-        let block_time = xml::find_text_by_tag(session_info, "BlockTime")?;
-        block_time
-            .parse::<u32>()
-            .context("couldn't parse block time from xml")
-    }
-    fn xml_get_session_id(doc: &Document) -> Result<Session> {
-        let session_info = xml::find_node_by_tag(doc.root(), "SessionInfo")?;
-        let session_id = xml::find_text_by_tag(session_info, "SID")?;
-        Session::from_str(session_id).context("couldn't parse session id from xml")
-    }
-    fn xml_get_users(doc: &Document) -> Result<Vec<String>> {
-        let session_info = xml::find_node_by_tag(doc.root(), "SessionInfo")?;
-        let users = xml::find_node_by_tag(session_info, "Users")?;
-        Ok(users
-            .children()
-            .filter(|n| n.has_tag_name("User"))
-            .map(|n| n.text().unwrap().to_string())
-            .collect())
-    }
-
-    pub async fn get_challenge(client: &Client) -> Result<Challenge> {
-        const URL: &str = "https://fritz.box/login_sid.lua?version=2";
-        let req = client.get(URL);
-        let resp = req.send().await?.text().await?;
-        let xml = Document::parse(&resp).context("couldn't parse challenge response xml")?;
-        Self::xml_get_challenge(&xml)
-    }
-    pub async fn get_challenge_and_users(client: &Client) -> Result<(Challenge, Vec<String>)> {
-        const URL: &str = "https://fritz.box/login_sid.lua?version=2";
-        let req = client.get(URL);
-        let resp = req.send().await?.text().await?;
-        let xml = Document::parse(&resp).context("couldn't parse challenge response xml")?;
-        Ok((Self::xml_get_challenge(&xml)?, Self::xml_get_users(&xml)?))
-    }
-    pub async fn get_session_id(
-        client: &Client,
-        username: &str,
-        response: &str,
-    ) -> Result<Session> {
-        const URL: &str = "https://fritz.box/login_sid.lua?version=2";
-
-        let form = [
-            ("username", username.to_string()),
-            ("response", response.to_string()),
-        ];
-
-        let req = client.post(URL).form(&form);
-        // request body is not a stream so it should always be cloneable
-        let resp = req.try_clone().unwrap().send().await?.text().await?;
-        let xml = Document::parse(&resp).context("couldn't parse session id response xml")?;
-
-        let block_time = Self::xml_get_block_time(&xml)?;
-        Ok(if block_time > 0 {
-            warn!("sleeping for {block_time}s");
-            tokio::time::sleep(Duration::from_secs(block_time as u64)).await;
-            let resp = req.send().await?.text().await?;
-            let xml = Document::parse(&resp).context("couldn't parse session id response xml")?;
-            Self::xml_get_session_id(&xml).context("received invalid session id")?
-        } else {
-            Self::xml_get_session_id(&xml).context("received invalid session id")?
-        })
-    }
-    pub async fn is_valid(&self, client: &Client) -> Result<bool> {
-        const URL: &str = "https://fritz.box/login_sid.lua?version=2";
-
-        let form = [("sid", hex::encode(self.id))];
-
-        let req = client.post(URL).form(&form);
-        let _resp = req.send().await?.text().await?;
-        unimplemented!()
-    }
-    pub async fn login(client: &Client, username: &str, password: &[u8]) -> Result<Session> {
-        let ch = Self::get_challenge(client).await?;
-        Self::get_session_id(client, username, &ch.response(password).to_string()).await
-    }
-    pub async fn logout(self, client: &Client) -> Result<()> {
-        const URL: &str = "https://fritz.box/login_sid.lua?version=2";
-
-        let form = [("logout", "1".to_string()), ("sid", hex::encode(self.id))];
-
-        let req = client.post(URL).form(&form);
-        Ok(req.send().await?.text().await.map(|_| ())?)
+        Ok(SessionId(id))
     }
 }
 
@@ -137,7 +235,7 @@ impl Session {
 mod tests {
     use roxmltree::Document;
 
-    use crate::login::session::Session;
+    use crate::{Permission, Permissions, SessionResponse};
 
     const XML: &str = r#"
 <SessionInfo>
@@ -151,45 +249,98 @@ mod tests {
     "#;
 
     #[test]
-    fn parse_challenge_xml() {
+    fn parse_xml_error() {
+        const XML: &str = r#"
+<SessionInfo>
+    <SID>0000000000000000</SID>
+    <Challenge>2$60000$d4949767019d1e6eed27c27f404c7aa7$6000$4f3415a3b5396a9675d08906ee6a6933</Challenge>
+    <BlockTime>12</BlockTime>
+    <Rights></Rights>
+    <Users>
+        <User last="1">fritz3713</User>
+    </Users>
+</SessionInfo>
+            "#;
+
         let doc = Document::parse(XML).unwrap();
-        let ch = Session::xml_get_challenge(&doc).unwrap();
+        let resp = SessionResponse::from_xml(&doc).unwrap();
 
-        assert_eq!(ch.statick.iterations, 60000);
-        assert_eq!(ch.dynamic.iterations, 6000);
+        assert_eq!(resp.session_id, None);
 
+        assert_eq!(resp.challenge.statick.iterations, 60000);
+        assert_eq!(resp.challenge.dynamic.iterations, 6000);
         assert_eq!(
-            ch.statick.salt,
+            resp.challenge.statick.salt,
             [212, 148, 151, 103, 1, 157, 30, 110, 237, 39, 194, 127, 64, 76, 122, 167]
         );
         assert_eq!(
-            ch.dynamic.salt,
+            resp.challenge.dynamic.salt,
             [79, 52, 21, 163, 181, 57, 106, 150, 117, 208, 137, 6, 238, 106, 105, 51]
         );
+
+        assert_eq!(resp.block_time, 12);
+        assert_eq!(resp.permissions, None);
+        assert_eq!(resp.users, ["fritz3713"]);
     }
 
     #[test]
-    fn parse_session_id_xml() {
-        let doc = Document::parse(XML).unwrap();
-        let ch = Session::xml_get_session_id(&doc).unwrap();
+    fn parse_xml_success() {
+        const XML_SUCCESS: &str = r#"
+<SessionInfo>
+    <SID>0de8afc227e5abeb</SID>
+    <Challenge>2$60000$d4949767019d1e6eed27c27f404c7aa7$6000$4f3415a3b5396a9675d08906ee6a6933</Challenge>
+    <BlockTime>0</BlockTime>
+    <Rights>
+        <Name>Dial</Name>
+        <Access>2</Access>
+        <Name>App</Name>
+        <Access>2</Access>
+        <Name>HomeAuto</Name>
+        <Access>2</Access>
+        <Name>BoxAdmin</Name>
+        <Access>2</Access>
+        <Name>Phone</Name>
+        <Access>2</Access>
+        <Name>NAS</Name>
+        <Access>2</Access>
+    </Rights>
+    <Users>
+        <User last="1">fritz3713</User>
+    </Users>
+</SessionInfo>
+        "#;
 
-        assert_eq!(ch.id, [13, 232, 175, 194, 39, 229, 171, 235]);
-    }
+        let doc = Document::parse(XML_SUCCESS).unwrap();
+        let resp = SessionResponse::from_xml(&doc).unwrap();
 
-    #[test]
-    fn parse_block_time_xml() {
-        let doc = Document::parse(XML).unwrap();
-        let block_time = Session::xml_get_block_time(&doc).unwrap();
+        assert_eq!(
+            resp.session_id.map(|s| s.0),
+            Some([13, 232, 175, 194, 39, 229, 171, 235])
+        );
 
-        assert_eq!(block_time, 32);
-    }
+        assert_eq!(resp.challenge.statick.iterations, 60000);
+        assert_eq!(resp.challenge.dynamic.iterations, 6000);
+        assert_eq!(
+            resp.challenge.statick.salt,
+            [212, 148, 151, 103, 1, 157, 30, 110, 237, 39, 194, 127, 64, 76, 122, 167]
+        );
+        assert_eq!(
+            resp.challenge.dynamic.salt,
+            [79, 52, 21, 163, 181, 57, 106, 150, 117, 208, 137, 6, 238, 106, 105, 51]
+        );
 
-    #[test]
-    fn parse_users_xml() {
-        let doc = Document::parse(XML).unwrap();
-        let users = Session::xml_get_users(&doc).unwrap();
-
-        assert_eq!(users.len(), 1);
-        assert_eq!(users[0], "fritz3713");
+        assert_eq!(resp.block_time, 0);
+        assert_eq!(
+            resp.permissions,
+            Some(Permissions {
+                dial: Permission::ReadWrite,
+                app: Permission::ReadWrite,
+                home_auto: Permission::ReadWrite,
+                box_admin: Permission::ReadWrite,
+                phone: Permission::ReadWrite,
+                nas: Permission::ReadWrite,
+            })
+        );
+        assert_eq!(resp.users, ["fritz3713"]);
     }
 }
