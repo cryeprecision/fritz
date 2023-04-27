@@ -4,14 +4,11 @@ use std::str::FromStr;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Local, ParseError, TimeZone};
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-use reqwest::Client;
 use serde::Deserialize;
 use thiserror::Error;
 
 use super::log_msg::LogMsg;
 use super::traits::FromLogEntry;
-
-use crate::SessionId;
 
 pub struct RawLogEntry {
     pub date: String,
@@ -141,20 +138,5 @@ impl LogEntry {
 
     pub fn age(&self, now: &DateTime<Local>) -> Duration {
         now.signed_duration_since(self.time)
-    }
-
-    pub async fn fetch(client: &Client, session: &SessionId) -> Result<Vec<LogEntry>> {
-        const URL: &str = "https://fritz.box/data.lua";
-
-        let form = [
-            ("page", "log".to_string()),
-            ("lang", "de".to_string()),
-            ("filter", "0".to_string()),
-            ("sid", session.to_string()),
-        ];
-
-        let req = client.post(URL).form(&form);
-        let resp = req.send().await?.text().await?;
-        Self::from_json(&resp)
     }
 }

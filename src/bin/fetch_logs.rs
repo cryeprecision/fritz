@@ -1,6 +1,5 @@
 use anyhow::Context;
 use dialoguer::theme::ColorfulTheme;
-use fritz_log_parser::logs::LogEntry;
 use fritz_log_parser::{logger, Client, Connection};
 
 pub async fn prompt_username(usernames: &[String]) -> String {
@@ -58,7 +57,7 @@ pub async fn main() {
 
     let session = client.session_id(&username, response).await.unwrap();
 
-    let logs = LogEntry::fetch(&client.0, &session).await.unwrap();
+    let logs = client.logs(&session).await.unwrap();
 
     client.logout(session).await.unwrap();
     println!("logged out");
