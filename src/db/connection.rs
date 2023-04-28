@@ -19,6 +19,10 @@ impl Connection {
             inner: rusqlite::Connection::open_in_memory()?,
         })
     }
+    pub fn inner(&self) -> &rusqlite::Connection {
+        &self.inner
+    }
+
     fn append_logs_impl(&self, entries: &[LogEntry]) -> Result<()> {
         let mut stmt = self.inner.prepare(
             "INSERT INTO logs (message, message_id, category, logged_at)
