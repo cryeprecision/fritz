@@ -6,7 +6,7 @@ fn main() {
         .context("couldn't initialize logger")
         .unwrap();
 
-    let db = Connection::open("./logs.db3")
+    let _db = Connection::open("./logs.db3")
         .context("couldn't open logs database file")
         .unwrap();
 }

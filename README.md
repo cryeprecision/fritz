@@ -1,5 +1,11 @@
 # fritz-log-parser
 
+## Problems
+
+Can't use [Rustls](https://github.com/rustls/rustls) because it doesn't accept the FRITZ!Box root certificate.
+
+- [stackoverflow.com/70187309#comment124072621_70187309](https://stackoverflow.com/questions/70187309/tls-error-using-reqwest-a-ca-certificate-is-being-used-as-an-end-entity-certifi#comment124072621_70187309)
+
 ## Resources
 
 - GitHub
@@ -11,6 +17,7 @@
 - Misc
   - [rust.helpful.codes/tutorials/reqwest/Sending-Form-Data-and-Uploading-Files-with-Reqwest](https://rust.helpful.codes/tutorials/reqwest/Sending-Form-Data-and-Uploading-Files-with-Reqwest/)
   - [cryptii.com/pipes/integer-encoder](https://cryptii.com/pipes/integer-encoder)
+  - [entrust.com/how-do-i-convert-my-pem-certificate-to-a-der-certificate-format](https://www.entrust.com/knowledgebase/ssl/how-do-i-convert-my-pem-certificate-to-a-der-certificate-format)
 
 ## Logic
 

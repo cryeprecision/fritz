@@ -181,8 +181,9 @@ impl SessionResponse {
     pub async fn fetch_challenge(client: &Client) -> Result<SessionResponse> {
         const URL: &str = "https://fritz.box/login_sid.lua?version=2";
         let req = client.get(URL);
-        let resp = req.send().await?.text().await?;
-        let xml = Document::parse(&resp).context("couldn't parse challenge response xml")?;
+        let resp = req.send().await?;
+        let text = resp.error_for_status()?.text().await?;
+        let xml = Document::parse(&text).context("couldn't parse challenge response xml")?;
         Ok(Self::from_xml(&xml)?)
     }
     pub async fn fetch_session_id(
@@ -196,8 +197,9 @@ impl SessionResponse {
 
         let req = client.post(URL).form(&form);
         // request body is not a stream so it should always be cloneable
-        let resp = req.try_clone().unwrap().send().await?.text().await?;
-        let xml = Document::parse(&resp).context("couldn't parse session id response xml")?;
+        let resp = req.try_clone().unwrap().send().await?;
+        let text = resp.error_for_status()?.text().await?;
+        let xml = Document::parse(&text).context("couldn't parse session id response xml")?;
         Ok(Self::from_xml(&xml)?)
     }
 }

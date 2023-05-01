@@ -1,6 +1,8 @@
+use std::path::Path;
+
 use crate::{logs::LogEntry, Response, SessionId, SessionResponse};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 
 pub struct Client {
     inner: reqwest::Client,
@@ -16,13 +18,41 @@ impl Client {
                 .unwrap(),
         }
     }
+    pub async fn new_with_cert(cert: impl AsRef<Path>) -> anyhow::Result<Client> {
+        let cert = tokio::fs::read_to_string(cert.as_ref())
+            .await
+            .context("couldn't read certificate")?;
+
+        let cert =
+            reqwest::Certificate::from_pem(cert.as_bytes()).context("certificate is invalid")?;
+
+        Ok(Client {
+            inner: reqwest::Client::builder()
+                .add_root_certificate(cert)
+                .build()
+                .unwrap(),
+        })
+    }
+
+    pub async fn certificate(&self, session_id: &SessionId) -> reqwest::Result<String> {
+        const URL: &str = "https://fritz.box/cgi-bin/firmwarecfg";
+
+        let form = reqwest::multipart::Form::new()
+            .text("sid", session_id.to_string())
+            .text("BoxCertExport", "");
+
+        let req = self.inner.post(URL).multipart(form);
+        let resp = req.send().await?;
+        resp.error_for_status()?.text().await
+    }
     pub async fn is_session_id_valid(&self, session_id: &SessionId) -> reqwest::Result<bool> {
         const URL: &str = "https://fritz.box/login_sid.lua?version=2";
 
         let form: [(&str, &str); 1] = [("sid", &session_id.to_string())];
 
         let req = self.inner.post(URL).form(&form);
-        let _resp = req.send().await?.text().await?;
+        let resp = req.send().await?;
+        let _text = resp.error_for_status()?.text().await?;
 
         unimplemented!()
     }
@@ -53,15 +83,17 @@ impl Client {
         let form: [(&str, &str); 2] = [("logout", "1"), ("sid", &session_id.to_string())];
 
         let req = self.inner.post(URL).form(&form);
-        req.send().await?.text().await.map(|_| ())
+        let resp = req.send().await?;
+        resp.error_for_status()?.text().await.map(|_| ())
     }
     pub async fn reboot(&self, session_id: &SessionId) -> reqwest::Result<()> {
-        const URL: &str = "https://fritz.box/reboot.lua";
+        const URL: &str = "https://fritz.box/data.lua";
 
-        let form: [(&str, &str); 1] = [("sid", &session_id.to_string())];
+        let form: [(&str, &str); 2] = [("sid", &session_id.to_string()), ("reboot", "1")];
 
         let req = self.inner.post(URL).form(&form);
-        req.send().await?.text().await.map(|_| ())
+        let resp = req.send().await?;
+        resp.error_for_status()?.text().await.map(|_| ())
     }
     pub async fn logs(&self, session_id: &SessionId) -> anyhow::Result<Vec<LogEntry>> {
         const URL: &str = "https://fritz.box/data.lua";
@@ -74,7 +106,8 @@ impl Client {
         ];
 
         let req = self.inner.post(URL).form(&form);
-        let resp = req.send().await?.text().await?;
-        LogEntry::from_json(&resp)
+        let resp = req.send().await?;
+        let text = resp.error_for_status()?.text().await?;
+        LogEntry::from_json(&text)
     }
 }
