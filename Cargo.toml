@@ -23,3 +23,8 @@ reqwest = { version = "0", default-features = false, features = ["default-tls", 
 roxmltree = { version = "0" } # parsing xml
 dialoguer = { version = "0" } # prompting for passwords and stuff
 rusqlite = { version = "0", features = ["bundled"] } # log database
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
