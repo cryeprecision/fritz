@@ -35,7 +35,7 @@ impl Client {
     }
 
     pub async fn certificate(&self, session_id: &SessionId) -> reqwest::Result<String> {
-        const URL: &str = "https://fritz.box/cgi-bin/firmwarecfg";
+        const URL: &str = "https://fritzbox.home.arpa/cgi-bin/firmwarecfg";
 
         let form = reqwest::multipart::Form::new()
             .text("sid", session_id.to_string())
@@ -46,7 +46,7 @@ impl Client {
         resp.error_for_status()?.text().await
     }
     pub async fn is_session_id_valid(&self, session_id: &SessionId) -> reqwest::Result<bool> {
-        const URL: &str = "https://fritz.box/login_sid.lua?version=2";
+        const URL: &str = "https://fritzbox.home.arpa/login_sid.lua?version=2";
 
         let form: [(&str, &str); 1] = [("sid", &session_id.to_string())];
 
@@ -78,7 +78,7 @@ impl Client {
             .ok_or(anyhow!("no session id after authenticating"))
     }
     pub async fn logout(&self, session_id: SessionId) -> reqwest::Result<()> {
-        const URL: &str = "https://fritz.box/login_sid.lua?version=2";
+        const URL: &str = "https://fritzbox.home.arpa/login_sid.lua?version=2";
 
         let form: [(&str, &str); 2] = [("logout", "1"), ("sid", &session_id.to_string())];
 
@@ -87,7 +87,7 @@ impl Client {
         resp.error_for_status()?.text().await.map(|_| ())
     }
     pub async fn reboot(&self, session_id: &SessionId) -> reqwest::Result<()> {
-        const URL: &str = "https://fritz.box/data.lua";
+        const URL: &str = "https://fritzbox.home.arpa/data.lua";
 
         let form: [(&str, &str); 2] = [("sid", &session_id.to_string()), ("reboot", "1")];
 
@@ -96,7 +96,7 @@ impl Client {
         resp.error_for_status()?.text().await.map(|_| ())
     }
     pub async fn logs(&self, session_id: &SessionId) -> anyhow::Result<Vec<LogEntry>> {
-        const URL: &str = "https://fritz.box/data.lua";
+        const URL: &str = "https://fritzbox.home.arpa/data.lua";
 
         let form: [(&str, &str); 4] = [
             ("page", "log"),

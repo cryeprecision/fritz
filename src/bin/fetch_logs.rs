@@ -113,22 +113,7 @@ pub async fn main() {
     let new_count = db.append_logs(&logs).unwrap();
     info!("inserted {} new logs ({}ms)", new_count, timer.elapsed_ms());
 
-    if ask_reboot().await {
-        timer.start();
-        client.reboot(&session).await.unwrap();
-        info!("requested reboot ({}ms)", timer.elapsed_ms());
-
-        info!("waiting until reboot is done...");
-        timer.start();
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        while let Err(err) = client.session_response().await {
-            info!("waiting... ({err})");
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-        info!("reboot is done ({}ms)", timer.elapsed_ms());
-    } else {
-        timer.start();
-        client.logout(session).await.unwrap();
-        info!("invalidated session id ({}ms)", timer.elapsed_ms());
-    }
+    timer.start();
+    client.logout(session).await.unwrap();
+    info!("invalidated session id ({}ms)", timer.elapsed_ms());
 }

@@ -179,7 +179,7 @@ impl SessionResponse {
         })
     }
     pub async fn fetch_challenge(client: &Client) -> Result<SessionResponse> {
-        const URL: &str = "https://fritz.box/login_sid.lua?version=2";
+        const URL: &str = "https://fritzbox.home.arpa/login_sid.lua?version=2";
         let req = client.get(URL);
         let resp = req.send().await?;
         let text = resp.error_for_status()?.text().await?;
@@ -191,7 +191,7 @@ impl SessionResponse {
         username: &str,
         response: Response,
     ) -> Result<SessionResponse> {
-        const URL: &str = "https://fritz.box/login_sid.lua?version=2";
+        const URL: &str = "https://fritzbox.home.arpa/login_sid.lua?version=2";
 
         let form: [(&str, &str); 2] = [("username", username), ("response", &response.to_string())];
 
