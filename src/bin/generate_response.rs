@@ -13,13 +13,12 @@ fn ask_challenge() -> Result<Challenge> {
         .interact()?;
     Ok(Challenge::from_str(&input).unwrap())
 }
-pub fn ask_password() -> Result<Vec<u8>> {
+pub fn ask_password() -> Result<String> {
     Ok(dialoguer::Password::with_theme(&ColorfulTheme::default())
         .with_prompt("Password")
         .allow_empty_password(false)
         .report(false)
-        .interact()?
-        .into_bytes())
+        .interact()?)
 }
 
 fn main() {
@@ -27,5 +26,5 @@ fn main() {
         .context("couldn't ask for challenge")
         .unwrap();
     let pw = ask_password().context("couldn't ask for password").unwrap();
-    println!("{}", ch.response(&pw));
+    println!("{}", ch.make_response(&pw));
 }

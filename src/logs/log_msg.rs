@@ -4,11 +4,7 @@ use std::str::FromStr;
 use thiserror::Error;
 
 use super::log_entry::RawLogEntry;
-use super::message::InternetMsg;
-use super::message::PhoneMsg;
-use super::message::SystemMsg;
-use super::message::UsbMsg;
-use super::message::WlanMsg;
+use super::message::{InternetMsg, PhoneMsg, SystemMsg, UsbMsg, WlanMsg};
 use super::traits::{FromLogEntry, FromLogMsg};
 
 /// Only the message part of the log entry
@@ -31,7 +27,7 @@ pub enum ParseLogMsgError {
     #[error("couldn't parse msg kind number")]
     CategoryParse(ParseIntError),
     #[error("message kind number `{0}` is out of range")]
-    CategoryOutOfRange(u32),
+    CategoryOutOfRange(i64),
     #[error("couldn't parse system message")]
     SystemMsgError,
     #[error("couldn't parse internet message")]
@@ -46,7 +42,7 @@ pub enum ParseLogMsgError {
 type ParseLogMsgResult<T> = std::result::Result<T, ParseLogMsgError>;
 
 impl LogMsg {
-    pub fn from_category_and_msg(category: u32, msg: &str) -> Result<Self, ParseLogMsgError> {
+    pub fn from_category_and_msg(category: i64, msg: &str) -> Result<Self, ParseLogMsgError> {
         match category {
             1 => Ok(LogMsg::System(
                 SystemMsg::from_log_msg(msg).map_err(|_| ParseLogMsgError::SystemMsgError)?,
@@ -66,7 +62,7 @@ impl LogMsg {
             num => Err(ParseLogMsgError::CategoryOutOfRange(num)),
         }
     }
-    pub fn category(&self) -> u32 {
+    pub fn category(&self) -> i64 {
         match self {
             LogMsg::System(_) => 1,
             LogMsg::Internet(_) => 2,
@@ -80,7 +76,7 @@ impl LogMsg {
 impl FromLogEntry for LogMsg {
     type Err = ParseLogMsgError;
     fn from_log_entry(entry: &RawLogEntry) -> Result<Self, Self::Err> {
-        let category = u32::from_str(&entry.category).map_err(ParseLogMsgError::CategoryParse)?;
+        let category = i64::from_str(&entry.category).map_err(ParseLogMsgError::CategoryParse)?;
         LogMsg::from_category_and_msg(category, &entry.msg)
     }
 }

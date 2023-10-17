@@ -6,23 +6,27 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1" }
-log = { version = "0" }
-simplelog = { version = "0" }
-thiserror = { version = "1" }
-anyhow = { version = "1" } # easy error handling and propagation
+serde = { version = "1", features = ["derive"] } # serde yes
+serde_json = { version = "1" } # json data model implementation
+tokio = { version = "1", features = ["rt", "macros", "fs", "process"] } # async runtime
+reqwest = { version = "0", default-features = false, features = ["rustls-tls", "multipart"] } # http requests
+roxmltree = { version = "0" } # parsing xml
 chrono = { version = "0" } # date and time features
-lazy-regex = { version = "2" }
-simple-error = { version = "0" }
+lazy-regex = { version = "2" } # easy regex
 pbkdf2 = { version = "0" } # fritzbox authentication
 hex = { version = "0" } # fritzbox authentication
 sha2 = { version = "0" } # fritzbox authentication
-tokio = { version = "1", features = ["rt", "macros", "fs", "process"] }
-reqwest = { version = "0", default-features = false, features = ["default-tls", "multipart"] }
-roxmltree = { version = "0" } # parsing xml
 dialoguer = { version = "0" } # prompting for passwords and stuff
-rusqlite = { version = "0", features = ["bundled"] } # log database
+log = { version = "0" } # logging facade
+simplelog = { version = "0" } # logging impl
+thiserror = { version = "1" } # easy error definition
+anyhow = { version = "1" } # easy error handling and propagation
+simple-error = { version = "0" } # idk probably obsolete
+# https://github.com/launchbadge/sqlx/issues/191#issuecomment-649464197
+sqlx = { version = "0", features = [ "sqlite", "runtime-tokio" ] } # sqlite and stuff
+libsqlite3-sys = { version = "*", features = [ "bundled" ] } # force sqlx to use bundled feature
+dotenv = { version = "0" } # load .env files
+parking_lot = { version = "0" } # better sync interface
 
 [profile.release]
 strip = true

@@ -1,40 +1,47 @@
-use std::path::Path;
-
-use rusqlite::{params, Result};
+use anyhow::Context;
+use sqlx::SqlitePool;
 
 use crate::logs::LogEntry;
 
+#[derive(Debug, Clone)]
 pub struct Connection {
-    inner: rusqlite::Connection,
+    inner: SqlitePool,
 }
 
 impl Connection {
-    pub fn open(path: impl AsRef<Path>) -> Result<Connection> {
+    pub async fn open(path: &str) -> anyhow::Result<Connection> {
         Ok(Connection {
-            inner: rusqlite::Connection::open(path.as_ref())?,
+            inner: SqlitePool::connect(path)
+                .await
+                .context("couldn't connect to db")?,
         })
     }
-    pub fn open_in_memory() -> Result<Connection> {
+    pub async fn open_in_memory() -> anyhow::Result<Connection> {
         Ok(Connection {
-            inner: rusqlite::Connection::open_in_memory()?,
+            inner: SqlitePool::connect("sqlite::memory:")
+                .await
+                .context("couldn't open db in memory")?,
         })
-    }
-    pub fn inner(&self) -> &rusqlite::Connection {
-        &self.inner
     }
 
-    fn append_logs_impl(&self, entries: &[LogEntry]) -> Result<()> {
-        let mut stmt = self.inner.prepare(
-            "INSERT INTO logs (message, message_id, category, logged_at)
-                VALUES (?1, ?2, ?3, ?4)",
-        )?;
+    async fn append_logs_impl(&self, entries: &[LogEntry]) -> anyhow::Result<()> {
         for entry in entries {
-            stmt.execute(params![
+            let (raw_msg, category, timestamp) = (
                 entry.raw_msg.as_str(),
-                entry.msg_id,
                 entry.msg.category(),
-                entry.time.timestamp()
-            ])?;
+                entry.time.timestamp(),
+            );
+            sqlx::query!(
+                "INSERT INTO logs (message, message_id, category, logged_at)
+                    VALUES (?1, ?2, ?3, ?4)",
+                raw_msg,
+                entry.msg_id,
+                category,
+                timestamp,
+            )
+            .execute(&self.inner)
+            .await
+            .context("couldn't insert entry into db")?;
         }
         Ok(())
     }
@@ -88,73 +95,98 @@ impl Connection {
         }
     }
 
-    pub fn append_logs(&self, entries: &[LogEntry]) -> Result<usize> {
+    pub async fn append_logs(&self, entries: &[LogEntry]) -> anyhow::Result<usize> {
         // TODO: replace this with `is_sorted` once that is stable
         assert!(entries.windows(2).all(|e| e[0].time <= e[1].time));
 
-        let latest = self.latest_logs(Some(1))?.into_iter().next();
+        let latest = self.latest_logs(Some(1)).await?.into_iter().next();
         match latest {
             Some(latest) => {
                 let new_entries = Self::new_entries(&latest, entries);
-                self.append_logs_impl(new_entries)?;
+                self.append_logs_impl(new_entries).await?;
                 Ok(new_entries.len())
             }
             None => {
-                self.append_logs_impl(entries)?;
+                self.append_logs_impl(entries).await?;
                 Ok(entries.len())
             }
         }
     }
 
-    pub fn latest_logs(&self, limit: Option<i64>) -> Result<Vec<LogEntry>> {
+    pub async fn latest_logs(&self, limit: Option<i64>) -> anyhow::Result<Vec<LogEntry>> {
         let limit = limit.unwrap_or(i64::MAX).max(1);
-        let mut stmt = self.inner.prepare(
+
+        let entries = sqlx::query!(
             "SELECT message, message_id, category, logged_at
                 FROM logs
                 ORDER BY id DESC
                 LIMIT ?1",
-        )?;
-        let entries = stmt.query_map(params![limit], |row| {
-            Ok(LogEntry::new(
-                row.get(0)?,
-                row.get(1)?,
-                row.get(2)?,
-                row.get(3)?,
-            ))
-        })?;
-        entries.collect()
-    }
-    pub fn is_empty(&self) -> Result<bool> {
-        // https://dba.stackexchange.com/a/223286
-        let mut stmt = self.inner.prepare(
-            "SELECT count(*)
-                FROM (SELECT 0 from logs LIMIT 1)",
-        )?;
-        stmt.query_row((), |row| Ok(row.get::<_, i32>(0)? == 0))
+            limit
+        )
+        .fetch_all(&self.inner)
+        .await
+        .context("couldn't fetch log entries")?;
+
+        let entries = entries
+            .into_iter()
+            .map(|entry| {
+                LogEntry::new(
+                    entry.message,
+                    entry.message_id,
+                    entry.category,
+                    entry.logged_at,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        Ok(entries)
     }
 
-    pub fn newest_logs(&self, limit: Option<i64>) -> Result<Vec<LogEntry>> {
+    pub async fn is_empty(&self) -> anyhow::Result<bool> {
+        // https://dba.stackexchange.com/a/223286
+        let count = sqlx::query!(
+            "SELECT count(*) as count
+                FROM (SELECT 0 from logs LIMIT 1)",
+        )
+        .fetch_one(&self.inner)
+        .await
+        .context("couldn't get row count from db")?;
+
+        Ok(count.count == 0)
+    }
+
+    pub async fn newest_logs(&self, limit: Option<i64>) -> anyhow::Result<Vec<LogEntry>> {
         let limit = limit.unwrap_or(i64::MAX).max(1);
-        let mut stmt = self.inner.prepare(
+
+        let entries = sqlx::query!(
             "SELECT message, message_id, category, logged_at
                 FROM logs
                 ORDER BY id ASC
                 LIMIT ?1",
-        )?;
-        let entries = stmt.query_map(params![limit], |row| {
-            Ok(LogEntry::new(
-                row.get(0)?,
-                row.get(1)?,
-                row.get(2)?,
-                row.get(3)?,
-            ))
-        })?;
-        entries.collect()
+            limit
+        )
+        .fetch_all(&self.inner)
+        .await
+        .context("couldn't fetch newest logs")?;
+
+        let entries = entries
+            .into_iter()
+            .map(|entry| {
+                LogEntry::new(
+                    entry.message,
+                    entry.message_id,
+                    entry.category,
+                    entry.logged_at,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        Ok(entries)
     }
 
-    pub fn create_logs_table(&self) -> Result<()> {
+    pub async fn create_logs_table(&self) -> anyhow::Result<()> {
         // create the main table structure
-        self.inner.execute(
+        sqlx::query!(
             "CREATE TABLE IF NOT EXISTS logs(
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 message    VARCHAR NOT NULL,
@@ -162,33 +194,45 @@ impl Connection {
                 category   INTEGER NOT NULL,
                 logged_at  INTEGER NOT NULL
             )",
-            (),
-        )?;
+        )
+        .execute(&self.inner)
+        .await
+        .context("couldn't create logs table")?;
+
         // add an index for fast lookup of logs by date
-        self.inner.execute(
+        sqlx::query!(
             "CREATE INDEX IF NOT EXISTS logs_logged_at_index
                 ON logs (logged_at DESC)",
-            (),
-        )?;
+        )
+        .execute(&self.inner)
+        .await
+        .context("couldn't create logged_at index")?;
+
         // the combination of `logged_at` and `message_id` must be unique
-        self.inner.execute(
+        sqlx::query!(
             "CREATE UNIQUE INDEX IF NOT EXISTS logs_unique_index
                 ON logs (logged_at DESC, message_id)",
-            (),
-        )?;
+        )
+        .execute(&self.inner)
+        .await
+        .context("couldn't create unique constraint")?;
+
         Ok(())
     }
-    pub fn drop_logs_table(&self) -> Result<()> {
-        self.inner.execute("DROP TABLE IF EXISTS logs", ())?;
+
+    pub async fn drop_logs_table(&self) -> anyhow::Result<()> {
+        sqlx::query!("DROP TABLE IF EXISTS logs")
+            .execute(&self.inner)
+            .await
+            .context("couldn't drop logs table")?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::logs::LogEntry;
-
     use super::Connection;
+    use crate::logs::LogEntry;
 
     macro_rules! entry {
         ($id:literal, $timestamp:literal) => {
@@ -204,10 +248,10 @@ mod tests {
         };
     }
 
-    #[test]
-    fn logs_insert_logic_wrong_order() {
-        let db = Connection::open_in_memory().unwrap();
-        db.create_logs_table().unwrap();
+    #[tokio::test]
+    async fn logs_insert_logic_wrong_order() {
+        let db = Connection::open_in_memory().await.unwrap();
+        db.create_logs_table().await.unwrap();
 
         // `example_logs.json` and `example_logs_2.json` are disjunct
         // and `example_logs_2.json` contains newer logs
@@ -218,9 +262,9 @@ mod tests {
         let data_2 = std::fs::read_to_string("./example_logs_2.json").unwrap();
         let parsed_2 = LogEntry::from_json(&data_2).unwrap();
 
-        db.append_logs(&parsed_2).unwrap();
-        db.append_logs(&parsed_1).unwrap();
-        let fetched = db.newest_logs(None).unwrap();
+        db.append_logs(&parsed_2).await.unwrap();
+        db.append_logs(&parsed_1).await.unwrap();
+        let fetched = db.newest_logs(None).await.unwrap();
 
         // should only contain entries from `example_logs_2.json`
         // because the old logs from `example_logs.json` should be rejected
@@ -228,10 +272,10 @@ mod tests {
         entries_equal!(parsed_2, fetched);
     }
 
-    #[test]
-    fn test_insert_logic_correct_order() {
-        let db = Connection::open_in_memory().unwrap();
-        db.create_logs_table().unwrap();
+    #[tokio::test]
+    async fn test_insert_logic_correct_order() {
+        let db = Connection::open_in_memory().await.unwrap();
+        db.create_logs_table().await.unwrap();
 
         // `example_logs.json` and `example_logs_2.json` are disjunct
         // and `example_logs_2.json` contains newer logs
@@ -242,9 +286,9 @@ mod tests {
         let data_2 = std::fs::read_to_string("./example_logs_2.json").unwrap();
         let parsed_2 = LogEntry::from_json(&data_2).unwrap();
 
-        db.append_logs(&parsed_1).unwrap();
-        db.append_logs(&parsed_2).unwrap();
-        let fetched = db.newest_logs(None).unwrap();
+        db.append_logs(&parsed_1).await.unwrap();
+        db.append_logs(&parsed_2).await.unwrap();
+        let fetched = db.newest_logs(None).await.unwrap();
 
         let mut parsed_combined = parsed_1.clone();
         parsed_combined.extend_from_slice(&parsed_2);

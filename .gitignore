@@ -1,6 +1,6 @@
-/target
-/example_*.*
-/test_logs.db3
-/logs.db3
-/cert.pem
-/.vscode
+/.vscode/
+/target/
+/examples/
+/*.db3
+/*.pem
+/.env

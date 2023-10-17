@@ -2,8 +2,9 @@ use std::fmt::Display;
 use std::str::FromStr;
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Duration, Local, ParseError, TimeZone};
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{
+    DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, ParseError, TimeZone,
+};
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -50,11 +51,11 @@ pub struct LogEntry {
     pub time: DateTime<Local>,
     pub msg: LogMsg,
     pub raw_msg: String,
-    pub msg_id: u32,
+    pub msg_id: i64,
 }
 
 impl LogEntry {
-    pub fn new(raw_msg: String, msg_id: u32, category: u32, time: i64) -> LogEntry {
+    pub fn new(raw_msg: String, msg_id: i64, category: i64, time: i64) -> LogEntry {
         let time = Local.timestamp_opt(time, 0).unwrap();
         let msg = LogMsg::from_category_and_msg(category, &raw_msg).unwrap();
 
@@ -106,7 +107,7 @@ impl LogEntry {
     fn parse_entry(arr: [String; 6]) -> Result<LogEntry> {
         let entry = RawLogEntry::from(arr);
         let time = Self::parse_time(&entry).context("couldn't parse date/time")?;
-        let msg_id = u32::from_str(&entry.msg_id).context("couldn't parse error message id")?;
+        let msg_id = i64::from_str(&entry.msg_id).context("couldn't parse error message id")?;
         let msg = LogMsg::from_log_entry(&entry).context("couldn't parse into log msg")?;
 
         Ok(LogEntry {

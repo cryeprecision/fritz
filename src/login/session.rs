@@ -1,15 +1,13 @@
+use std::fmt::Display;
 use std::num::ParseIntError;
-use std::{fmt::Display, str::FromStr};
+use std::str::FromStr;
 
-use anyhow::{Context, Result};
-use reqwest::Client;
 use roxmltree::{Document, Node};
 use thiserror::Error;
 
+use super::challenge::Challenge;
 use crate::xml::{find_node_by_tag, find_text_by_tag};
 use crate::{ChallengeParseError, Response};
-
-use super::challenge::Challenge;
 
 /// `<Access>`
 #[derive(Debug, PartialEq, Eq)]
@@ -112,7 +110,7 @@ impl Permissions {
 }
 
 #[derive(Debug)]
-pub struct SessionResponse {
+pub struct LoginChallenge {
     /// `<SID>`
     pub session_id: Option<SessionId>,
     /// `<Challenge>`
@@ -139,11 +137,17 @@ pub enum SessionResponseParseError {
     Challenge(#[from] ChallengeParseError),
     #[error("couldn't parse block time: {0}")]
     BlockTime(#[from] ParseIntError),
+    #[error("text is not valid xml: {0}")]
+    Xml(#[from] roxmltree::Error),
 }
 type SessionResponseParseResult<T> = std::result::Result<T, SessionResponseParseError>;
 
-impl SessionResponse {
-    pub fn from_xml(doc: &Document) -> SessionResponseParseResult<SessionResponse> {
+impl LoginChallenge {
+    pub(crate) fn from_xml_text(xml: &str) -> SessionResponseParseResult<LoginChallenge> {
+        Self::from_xml(&roxmltree::Document::parse(&xml)?)
+    }
+
+    pub(crate) fn from_xml(doc: &Document) -> SessionResponseParseResult<LoginChallenge> {
         let session_info = find_node_by_tag(doc.root(), "SessionInfo")?;
         let session_id = find_text_by_tag(session_info, "SID")?;
         let challenge = find_text_by_tag(session_info, "Challenge")?;
@@ -170,7 +174,7 @@ impl SessionResponse {
             .collect::<Option<Vec<_>>>()
             .ok_or(SessionResponseParseError::NoText)?;
 
-        Ok(SessionResponse {
+        Ok(LoginChallenge {
             session_id,
             challenge,
             block_time,
@@ -178,38 +182,21 @@ impl SessionResponse {
             users,
         })
     }
-    pub async fn fetch_challenge(client: &Client) -> Result<SessionResponse> {
-        const URL: &str = "https://fritzbox.home.arpa/login_sid.lua?version=2";
-        let req = client.get(URL);
-        let resp = req.send().await?;
-        let text = resp.error_for_status()?.text().await?;
-        let xml = Document::parse(&text).context("couldn't parse challenge response xml")?;
-        Ok(Self::from_xml(&xml)?)
-    }
-    pub async fn fetch_session_id(
-        client: &Client,
-        username: &str,
-        response: Response,
-    ) -> Result<SessionResponse> {
-        const URL: &str = "https://fritzbox.home.arpa/login_sid.lua?version=2";
 
-        let form: [(&str, &str); 2] = [("username", username), ("response", &response.to_string())];
-
-        let req = client.post(URL).form(&form);
-        // request body is not a stream so it should always be cloneable
-        let resp = req.try_clone().unwrap().send().await?;
-        let text = resp.error_for_status()?.text().await?;
-        let xml = Document::parse(&text).context("couldn't parse session id response xml")?;
-        Ok(Self::from_xml(&xml)?)
+    pub fn make_response(&self, password: &str) -> Response {
+        self.challenge.make_response(password)
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct SessionId(pub [u8; 8]);
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct SessionId {
+    /// Actual SessionId
+    id: [u8; 8],
+}
 
 impl Display for SessionId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&hex::encode(self.0))
+        f.write_str(&hex::encode(self.id))
     }
 }
 
@@ -229,7 +216,7 @@ impl FromStr for SessionId {
         if id.iter().all(|&b| b == 0) {
             return Err(SessionIdParseError::Zero);
         }
-        Ok(SessionId(id))
+        Ok(SessionId { id })
     }
 }
 
@@ -237,7 +224,7 @@ impl FromStr for SessionId {
 mod tests {
     use roxmltree::Document;
 
-    use crate::{Permission, Permissions, SessionResponse};
+    use crate::{LoginChallenge, Permission, Permissions};
 
     const XML: &str = r#"
 <SessionInfo>
@@ -265,18 +252,18 @@ mod tests {
             "#;
 
         let doc = Document::parse(XML).unwrap();
-        let resp = SessionResponse::from_xml(&doc).unwrap();
+        let resp = LoginChallenge::from_xml(&doc).unwrap();
 
         assert_eq!(resp.session_id, None);
 
-        assert_eq!(resp.challenge.statick.iterations, 60000);
-        assert_eq!(resp.challenge.dynamic.iterations, 6000);
+        assert_eq!(resp.challenge.static_params.iterations, 60000);
+        assert_eq!(resp.challenge.dynamic_params.iterations, 6000);
         assert_eq!(
-            resp.challenge.statick.salt,
+            resp.challenge.static_params.salt,
             [212, 148, 151, 103, 1, 157, 30, 110, 237, 39, 194, 127, 64, 76, 122, 167]
         );
         assert_eq!(
-            resp.challenge.dynamic.salt,
+            resp.challenge.dynamic_params.salt,
             [79, 52, 21, 163, 181, 57, 106, 150, 117, 208, 137, 6, 238, 106, 105, 51]
         );
 
@@ -313,21 +300,21 @@ mod tests {
         "#;
 
         let doc = Document::parse(XML_SUCCESS).unwrap();
-        let resp = SessionResponse::from_xml(&doc).unwrap();
+        let resp = LoginChallenge::from_xml(&doc).unwrap();
 
         assert_eq!(
-            resp.session_id.map(|s| s.0),
+            resp.session_id.map(|s| s.id),
             Some([13, 232, 175, 194, 39, 229, 171, 235])
         );
 
-        assert_eq!(resp.challenge.statick.iterations, 60000);
-        assert_eq!(resp.challenge.dynamic.iterations, 6000);
+        assert_eq!(resp.challenge.static_params.iterations, 60000);
+        assert_eq!(resp.challenge.dynamic_params.iterations, 6000);
         assert_eq!(
-            resp.challenge.statick.salt,
+            resp.challenge.static_params.salt,
             [212, 148, 151, 103, 1, 157, 30, 110, 237, 39, 194, 127, 64, 76, 122, 167]
         );
         assert_eq!(
-            resp.challenge.dynamic.salt,
+            resp.challenge.dynamic_params.salt,
             [79, 52, 21, 163, 181, 57, 106, 150, 117, 208, 137, 6, 238, 106, 105, 51]
         );
 
