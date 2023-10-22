@@ -1,6 +1,9 @@
 /.vscode/
 /target/
 /examples/
+/responses/
 /*.db3
+/*.db
 /*.pem
 /.env
+/test_*.*

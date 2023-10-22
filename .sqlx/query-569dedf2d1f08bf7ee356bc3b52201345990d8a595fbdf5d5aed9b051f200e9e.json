@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT \"datetime\",\n               \"message\",\n               \"message_id\",\n               \"category_id\",\n               \"repetition_datetime\",\n               \"repetition_count\"\n        FROM \"logs\"\n        ORDER BY \"datetime\" DESC\n        LIMIT ?1, ?2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "datetime",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "message",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "message_id",
+        "ordinal": 2,
+        "type_info": "Int64"
+      },
+      {
+        "name": "category_id",
+        "ordinal": 3,
+        "type_info": "Int64"
+      },
+      {
+        "name": "repetition_datetime",
+        "ordinal": 4,
+        "type_info": "Int64"
+      },
+      {
+        "name": "repetition_count",
+        "ordinal": 5,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "569dedf2d1f08bf7ee356bc3b52201345990d8a595fbdf5d5aed9b051f200e9e"
+}

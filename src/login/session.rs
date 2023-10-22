@@ -2,112 +2,12 @@ use std::fmt::Display;
 use std::num::ParseIntError;
 use std::str::FromStr;
 
-use roxmltree::{Document, Node};
+use roxmltree::Document;
 use thiserror::Error;
 
 use super::challenge::Challenge;
-use crate::xml::{find_node_by_tag, find_text_by_tag};
-use crate::{ChallengeParseError, Response};
-
-/// `<Access>`
-#[derive(Debug, PartialEq, Eq)]
-pub enum Permission {
-    /// `1`
-    ReadOnly,
-    /// `2`
-    ReadWrite,
-}
-
-#[derive(Debug, Error)]
-pub enum PermissionParseError {
-    #[error("couldn't parse integer number")]
-    Parse(#[from] ParseIntError),
-    #[error("number doesn't correspond to a permission")]
-    OutOfRange,
-}
-
-impl FromStr for Permission {
-    type Err = PermissionParseError;
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s.parse::<i32>()? {
-            1 => Ok(Permission::ReadOnly),
-            2 => Ok(Permission::ReadWrite),
-            _ => Err(PermissionParseError::OutOfRange),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct Permissions {
-    /// `<Name>Dial</Name>`
-    dial: Permission,
-    /// `<Name>App</Name>`
-    app: Permission,
-    /// `<Name>HomeAuto</Name>`
-    home_auto: Permission,
-    /// `<Name>BoxAdmin</Name>`
-    box_admin: Permission,
-    /// `<Name>Phone</Name>`
-    phone: Permission,
-    /// `<Name>NAS</Name>`
-    nas: Permission,
-}
-
-#[derive(Debug, Error)]
-pub enum PermissionsParseError {
-    #[error("encountered a node without text")]
-    NoText,
-    #[error("unexpected number of nodes")]
-    Length,
-    #[error("unexpected permission name")]
-    PermissionName,
-    #[error("couldn't parse permission value")]
-    PermissionValue(#[from] PermissionParseError),
-}
-type PermissionsParseResult<T> = std::result::Result<T, PermissionsParseError>;
-
-impl Permissions {
-    /// `node`: `<Rights>...</Rights>`
-    pub fn from_rights_node(node: &Node) -> PermissionsParseResult<Option<Permissions>> {
-        const EXPECTED_NODE_COUNT: usize = 12;
-        const EXPECTED_NODE_NAMES: [&str; 6] =
-            ["Dial", "App", "HomeAuto", "BoxAdmin", "Phone", "NAS"];
-
-        if !node.has_children() {
-            return Ok(None);
-        }
-
-        let values = node
-            .children()
-            .filter(|n| n.is_element())
-            .map(|n| n.text())
-            .collect::<Option<Vec<_>>>()
-            .ok_or(PermissionsParseError::NoText)?;
-
-        if values.len() != EXPECTED_NODE_COUNT {
-            return Err(PermissionsParseError::Length);
-        }
-
-        let mut result_iter = values.chunks_exact(2);
-        let mut expected_name_iter = EXPECTED_NODE_NAMES.iter();
-        let mut next = || -> PermissionsParseResult<Permission> {
-            let kv = result_iter.next().unwrap();
-            if kv[0] != *expected_name_iter.next().unwrap() {
-                return Err(PermissionsParseError::PermissionName);
-            }
-            Ok(Permission::from_str(kv[1])?)
-        };
-
-        Ok(Some(Permissions {
-            dial: next()?,
-            app: next()?,
-            home_auto: next()?,
-            box_admin: next()?,
-            phone: next()?,
-            nas: next()?,
-        }))
-    }
-}
+use super::xml::{find_node_by_tag, find_text_by_tag};
+use super::{ChallengeParseError, Response};
 
 #[derive(Debug)]
 pub struct LoginChallenge {
@@ -117,8 +17,6 @@ pub struct LoginChallenge {
     pub challenge: Challenge,
     /// `<BlockTime>`
     pub block_time: u32,
-    /// `<Rights>`
-    pub permissions: Option<Permissions>,
     /// `<Users>`
     pub users: Vec<String>,
 }
@@ -126,11 +24,9 @@ pub struct LoginChallenge {
 #[derive(Debug, Error)]
 pub enum SessionResponseParseError {
     #[error("couldn't find node: {0}")]
-    MissingNode(#[from] crate::xml::Error),
+    MissingNode(#[from] super::xml::Error),
     #[error("user tag has no text content")]
     NoText,
-    #[error("couldn't parse permissions: {0}")]
-    Permissions(#[from] PermissionsParseError),
     #[error("couldn't parse session id: {0}")]
     SessionId(#[from] SessionIdParseError),
     #[error("couldn't parse challenge: {0}")]
@@ -152,7 +48,6 @@ impl LoginChallenge {
         let session_id = find_text_by_tag(session_info, "SID")?;
         let challenge = find_text_by_tag(session_info, "Challenge")?;
         let block_time = find_text_by_tag(session_info, "BlockTime")?;
-        let rights = find_node_by_tag(session_info, "Rights")?;
         let users = find_node_by_tag(session_info, "Users")?;
 
         // Zero id corresponds to None
@@ -166,7 +61,6 @@ impl LoginChallenge {
 
         let challenge = Challenge::from_str(challenge)?;
         let block_time = block_time.parse::<u32>()?;
-        let permissions = Permissions::from_rights_node(&rights)?;
         let users = users
             .children()
             .filter(|n| n.is_element() && n.has_tag_name("User"))
@@ -178,7 +72,6 @@ impl LoginChallenge {
             session_id,
             challenge,
             block_time,
-            permissions,
             users,
         })
     }
@@ -224,7 +117,7 @@ impl FromStr for SessionId {
 mod tests {
     use roxmltree::Document;
 
-    use crate::{LoginChallenge, Permission, Permissions};
+    use super::LoginChallenge;
 
     const XML: &str = r#"
 <SessionInfo>
@@ -268,7 +161,6 @@ mod tests {
         );
 
         assert_eq!(resp.block_time, 12);
-        assert_eq!(resp.permissions, None);
         assert_eq!(resp.users, ["fritz3713"]);
     }
 
@@ -319,17 +211,6 @@ mod tests {
         );
 
         assert_eq!(resp.block_time, 0);
-        assert_eq!(
-            resp.permissions,
-            Some(Permissions {
-                dial: Permission::ReadWrite,
-                app: Permission::ReadWrite,
-                home_auto: Permission::ReadWrite,
-                box_admin: Permission::ReadWrite,
-                phone: Permission::ReadWrite,
-                nas: Permission::ReadWrite,
-            })
-        );
         assert_eq!(resp.users, ["fritz3713"]);
     }
 }

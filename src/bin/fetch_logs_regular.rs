@@ -1,43 +1,39 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
-use fritz_log_parser::{logger, Client, Connection};
+use fritz_log_parser::{db, logger, login};
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() {
-    logger::init()
-        .context("couldn't initialize logger")
-        .unwrap();
+async fn main() -> anyhow::Result<()> {
+    logger::init().context("initialize logger")?;
+    let path = dotenv::dotenv().context("load .env file")?;
+    log::info!("loaded .env from {}", path.to_str().expect("utf-8"));
 
-    let path = dotenv::dotenv().context("couldn't load .env").unwrap();
-    log::info!(
-        "loaded .env from {}",
-        path.to_str().unwrap_or("[invalid utf-8]")
-    );
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop_spawn = Arc::clone(&stop);
+    let _ = tokio::task::spawn(async move {
+        tokio::signal::ctrl_c().await.unwrap();
+        log::info!("received ctrl+c signal");
+        stop_spawn.store(true, Ordering::Relaxed);
+    });
 
     let db_url = std::env::var("DATABASE_URL").unwrap_or("sqlite://logs.db3".to_string());
-    let db = Connection::open(&db_url)
-        .await
-        .context("couldn't open logs database")
-        .unwrap();
-
-    db.create_logs_table()
-        .await
-        .context("couldn't create logs table")
-        .unwrap();
-
-    let client = Client::new(None, None, None, None).await.unwrap();
+    let db = db::Database::open(&db_url).await.context("open database")?;
+    let client = login::Client::new(None, None, None, None).await?;
 
     loop {
-        let logs = client.logs().await.context("couldn't fetch logs").unwrap();
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
 
-        let new_count = db
-            .append_logs(&logs)
-            .await
-            .context("couldn't insert new entries")
-            .unwrap();
-
-        log::info!("inserted {} new logs", new_count);
+        let logs = client.logs().await.context("fetch logs")?;
+        db.append_logs(&logs).await.context("insert logs")?;
+        log::info!("inserted {} logs", logs.len());
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
+    db.close().await;
+
+    Ok(())
 }

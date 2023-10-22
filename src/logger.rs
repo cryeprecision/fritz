@@ -3,7 +3,7 @@ use simplelog::{ColorChoice, ConfigBuilder, TermLogger, TerminalMode};
 
 pub fn init() -> Result<(), SetLoggerError> {
     TermLogger::init(
-        LevelFilter::Debug,
+        LevelFilter::Info,
         ConfigBuilder::default()
             .add_filter_ignore_str("hyper::")
             .add_filter_ignore_str("rustls::")

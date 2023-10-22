@@ -8,16 +8,16 @@ edition = "2021"
 [dependencies]
 serde = { version = "1", features = ["derive"] } # serde yes
 serde_json = { version = "1" } # json data model implementation
-tokio = { version = "1", features = ["rt", "macros", "fs", "process"] } # async runtime
-reqwest = { version = "0", default-features = false, features = ["rustls-tls", "multipart"] } # http requests
+tokio = { version = "1", features = ["rt", "macros", "fs", "process", "signal"] } # async runtime
+reqwest = { version = "0", default-features = false, features = ["rustls-tls", "multipart", "json"] } # http requests
 roxmltree = { version = "0" } # parsing xml
-chrono = { version = "0" } # date and time features
+chrono = { version = "0", features = ["serde"] } # date and time features
 lazy-regex = { version = "2" } # easy regex
 pbkdf2 = { version = "0" } # fritzbox authentication
 hex = { version = "0" } # fritzbox authentication
 sha2 = { version = "0" } # fritzbox authentication
 dialoguer = { version = "0" } # prompting for passwords and stuff
-log = { version = "0" } # logging facade
+log = { version = "0", features = ["release_max_level_info"] } # logging facade
 simplelog = { version = "0" } # logging impl
 thiserror = { version = "1" } # easy error definition
 anyhow = { version = "1" } # easy error handling and propagation
@@ -30,3 +30,8 @@ parking_lot = { version = "0" } # better sync interface
 
 [profile.release]
 strip = true
+panic = "abort"
+
+# https://github.com/launchbadge/sqlx/tree/main#compile-time-verification
+[profile.dev.package.sqlx-macros]
+opt-level = 3

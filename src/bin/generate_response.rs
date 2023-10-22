@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use anyhow::{Context, Result};
 use dialoguer::theme::ColorfulTheme;
-use fritz_log_parser::Challenge;
+use fritz_log_parser::login::Challenge;
 
 fn ask_challenge() -> Result<Challenge> {
     let input = dialoguer::Input::with_theme(&ColorfulTheme::default())

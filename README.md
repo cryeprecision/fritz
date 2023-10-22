@@ -2,9 +2,7 @@
 
 ## Problems
 
-Can't use [Rustls](https://github.com/rustls/rustls) because it doesn't accept the FRITZ!Box root certificate.
-
-- [stackoverflow.com/70187309#comment124072621_70187309](https://stackoverflow.com/questions/70187309/tls-error-using-reqwest-a-ca-certificate-is-being-used-as-an-end-entity-certifi#comment124072621_70187309)
+- None `:)`
 
 ## Resources
 

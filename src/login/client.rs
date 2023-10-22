@@ -1,11 +1,14 @@
+use std::path::PathBuf;
 use std::time::Instant;
 
 use anyhow::Context;
+use chrono::Local;
 use parking_lot::Mutex;
 use reqwest::tls::Version;
+use reqwest::{Method, RequestBuilder};
 
-use crate::logs::LogEntry;
-use crate::{LoginChallenge, SessionId};
+use super::{LoginChallenge, SessionId};
+use crate::{api, fritz};
 
 pub struct Client {
     /// Use to make REST requests
@@ -75,13 +78,106 @@ impl Client {
         })
     }
 
+    pub async fn save_response(name: &str, text: &str) {
+        let Ok(save_response) = dotenv::var("FRITZBOX_SAVE_RESPONSE") else {
+            log::warn!("missing env var FRITZBOX_SAVE_RESPONSE");
+            return;
+        };
+        let Ok(save_response) = save_response.parse::<bool>() else {
+            log::warn!("couldn't parse FRITZBOX_SAVE_RESPONSE as bool");
+            return;
+        };
+        if !save_response {
+            return;
+        }
+
+        let Ok(save_response_path) = dotenv::var("FRITZBOX_SAVE_RESPONSE_PATH") else {
+            log::warn!("missing env var FRITZBOX_SAVE_RESPONSE_PATH");
+            return;
+        };
+
+        let mut save_response_path = PathBuf::from(save_response_path);
+        match tokio::fs::metadata(&save_response_path).await {
+            Ok(metadata) => {
+                if !metadata.is_dir() {
+                    log::warn!("FRITZBOX_SAVE_RESPONSE_PATH doesn't point to a folder");
+                }
+            }
+            Err(_) => {
+                if let Err(err) = tokio::fs::create_dir(&save_response_path).await {
+                    log::warn!(
+                        "couldn't create folder to FRITZBOX_SAVE_RESPONSE_PATH: {:?}",
+                        err
+                    );
+                    return;
+                } else {
+                    log::info!("created folder to FRITZBOX_SAVE_RESPONSE_PATH");
+                }
+            }
+        }
+
+        let now = Local::now().format("%Y-%m-%d_%H-%M-%S.%3f");
+        save_response_path.push(format!("response_{}_{}.txt", now, name));
+
+        if let Err(err) = tokio::fs::write(&save_response_path, text).await {
+            log::warn!(
+                "couldn't save {}: {:?}",
+                save_response_path.to_string_lossy(),
+                err
+            );
+        }
+    }
+
+    pub async fn request_with<F>(
+        &self,
+        name: &str,
+        url: &str,
+        method: Method,
+        func: F,
+    ) -> anyhow::Result<String>
+    where
+        F: FnOnce(RequestBuilder) -> RequestBuilder,
+    {
+        let now = Instant::now();
+        let mut builder = self.client.request(method.clone(), url);
+        builder = func(builder);
+
+        let resp = builder.send().await.context("send request")?;
+        if let Err(err) = resp.error_for_status_ref() {
+            return Err(err).context("response status 2XX");
+        }
+
+        let text = resp.text().await.context("decode response as text")?;
+        let elapsed_ms = now.elapsed().as_secs_f64() * 1e3;
+
+        let session_id = self
+            .session_id
+            .lock()
+            .clone()
+            .map(|id| id.to_string())
+            .unwrap_or(String::from("0000000000000000"));
+
+        log::info!(
+            "{} request {} ({:?}) took {:5.0}ms (session-id: {})",
+            name,
+            url,
+            method,
+            elapsed_ms,
+            session_id,
+        );
+
+        Self::save_response(name, &text).await;
+
+        Ok(text)
+    }
+
     /// Example: `client.make_url("/cgi-bin/firmwarecfg")` will produce
     /// `https://{host}/cgi-bin/firmwarecfg`
-    fn make_url(&self, path: &str) -> String {
+    pub fn make_url(&self, path: &str) -> String {
         format!("https://{}{}", self.domain, path)
     }
 
-    async fn check_or_renew_session_id(&self) -> anyhow::Result<SessionId> {
+    pub async fn check_or_renew_session_id(&self) -> anyhow::Result<SessionId> {
         match self.check_session_id().await? {
             None => self.login().await,
             Some(session_id) => Ok(session_id),
@@ -98,16 +194,14 @@ impl Client {
         let url = self.make_url("/login_sid.lua?version=2");
         let form: [(&str, &str); 1] = [("sid", &session_id.to_string())];
 
-        let now = Instant::now();
-        let req = self.client.post(&url).form(&form);
-        let resp = req.send().await?;
-        let text = resp.error_for_status()?.text().await?;
-        let elapsed_ms = now.elapsed().as_secs_f64() * 1e3;
-        log::debug!("check_session_id ({:.2}ms):\n{}", elapsed_ms, text.trim());
+        let text = self
+            .request_with("check-session-id", &url, Method::POST, |req| {
+                req.form(&form)
+            })
+            .await?;
 
         let challenge =
             LoginChallenge::from_xml_text(&text).context("couldn't parse response xml")?;
-
         Ok(challenge
             .session_id
             .map(|id| if id == session_id { Some(id) } else { None })
@@ -117,18 +211,10 @@ impl Client {
     /// Get the login challenge
     pub async fn login_challenge(&self) -> anyhow::Result<LoginChallenge> {
         let url = self.make_url("/login_sid.lua?version=2");
-
-        let now = Instant::now();
-        let req = self.client.get(&url);
-        let resp = req.send().await?;
-        let text = resp.error_for_status()?.text().await?;
-        let elapsed_ms = now.elapsed().as_secs_f64() * 1e3;
-        log::debug!("login_challenge ({:.2}ms):\n{}", elapsed_ms, text);
-
-        let xml = roxmltree::Document::parse(&text)
-            .context("login challenge response returned invalid xml")?;
-
-        LoginChallenge::from_xml(&xml).context("couldn't parse login challenge xml")
+        let text = self
+            .request_with("login-challenge", &url, Method::GET, |req| req)
+            .await?;
+        Ok(LoginChallenge::from_xml_text(&text)?)
     }
 
     /// Login by sending the correct response for the given challenge
@@ -144,35 +230,44 @@ impl Client {
                 challenge.users
             )
         }
-
-        let url = self.make_url("/login_sid.lua?version=2");
         let response = challenge.make_response(&self.password).to_string();
+        let url = self.make_url("/login_sid.lua?version=2");
         let form: [(&str, &str); 2] = [("username", &self.username), ("response", &response)];
 
-        let now = Instant::now();
-        let req = self.client.post(&url).form(&form);
-        let resp = req.send().await?;
-        let text = resp.error_for_status()?.text().await?;
-        let elapsed_ms = now.elapsed().as_secs_f64() * 1e3;
-        log::debug!("login_response ({:.2}ms):\n{}", elapsed_ms, text);
+        let text = self
+            .request_with("login-response", &url, Method::POST, |req| req.form(&form))
+            .await?;
 
-        LoginChallenge::from_xml_text(&text).context("couldn't parse response xml")
+        Ok(LoginChallenge::from_xml_text(&text)?)
     }
 
     pub async fn login(&self) -> anyhow::Result<SessionId> {
         // get the challenge
         let login_challenge = self.login_challenge().await?;
-
         // respond with the correct response
         let response = self.login_response(&login_challenge).await?;
-
         // get the session id
-        let session_id = response
-            .session_id
-            .ok_or(anyhow::anyhow!("missing session id"))?;
+        let session_id = response.session_id.context("missing session id")?;
 
         *self.session_id.lock() = Some(session_id.clone());
         Ok(session_id)
+    }
+
+    pub async fn logout(&self) -> anyhow::Result<()> {
+        let Some(session_id) = self.check_session_id().await? else {
+            *self.session_id.lock() = None;
+            return Ok(());
+        };
+
+        let url = self.make_url("/login_sid.lua?version=2");
+        let form: [(&str, &str); 2] = [("logout", "1"), ("sid", &session_id.to_string())];
+
+        let _ = self
+            .request_with("logout", &url, Method::POST, |req| req.form(&form))
+            .await?;
+
+        *self.session_id.lock() = None;
+        Ok(())
     }
 
     pub async fn box_cert(&self) -> anyhow::Result<String> {
@@ -182,51 +277,53 @@ impl Client {
             .text("sid", session_id)
             .text("BoxCertExport", "");
 
-        let now = Instant::now();
-        let req = self.client.post(&url).multipart(form);
-        let resp = req.send().await?;
-        let text = resp.error_for_status()?.text().await?;
-        let elapsed_ms = now.elapsed().as_secs_f64() * 1e3;
-        log::debug!("box_cert ({:.2}ms):\n{}", elapsed_ms, text);
+        let text = self
+            .request_with("box-cert", &url, Method::POST, |req| req.multipart(form))
+            .await?;
 
         Ok(text)
     }
 
-    pub async fn logout(&self) -> anyhow::Result<()> {
-        let Some(session_id) = self.check_session_id().await? else {
-            return Ok(());
-        };
-
-        let url = self.make_url("/login_sid.lua?version=2");
-        let form: [(&str, &str); 2] = [("logout", "1"), ("sid", &session_id.to_string())];
-
-        let now = Instant::now();
-        let req = self.client.post(&url).form(&form);
-        let resp = req.send().await?;
-        let text = resp.error_for_status()?.text().await?;
-        let elapsed_ms = now.elapsed().as_secs_f64() * 1e3;
-        log::debug!("logout ({:.2}ms):\n{}", elapsed_ms, text);
-
-        Ok(())
-    }
-
-    pub async fn logs(&self) -> anyhow::Result<Vec<LogEntry>> {
+    pub async fn clear_logs(&self) -> anyhow::Result<serde_json::Value> {
         let url = self.make_url("/data.lua");
         let session_id = self.check_or_renew_session_id().await?.to_string();
-        let form: [(&str, &str); 4] = [
+        let form: [(&str, &str); 6] = [
+            ("xhr", "1"),
+            ("sid", &session_id),
+            ("page", "log"),
+            ("lang", "de"),
+            ("xhrId", "del"),
+            ("del", "1"),
+        ];
+
+        let text = self
+            .request_with("clear-logs", &url, Method::POST, |req| req.form(&form))
+            .await?;
+
+        serde_json::from_str(&text).context("parse json")
+    }
+
+    pub async fn logs(&self) -> anyhow::Result<Vec<fritz::Log>> {
+        let url = self.make_url("/data.lua");
+        let session_id = self.check_or_renew_session_id().await?.to_string();
+        let form: [(&str, &str); 6] = [
+            ("xhr", "1"),
             ("page", "log"),
             ("lang", "de"),
             ("filter", "0"),
             ("sid", &session_id),
+            ("xhrId", "all"),
         ];
 
-        let now = Instant::now();
-        let req = self.client.post(&url).form(&form);
-        let resp = req.send().await?;
-        let text = resp.error_for_status()?.text().await?;
-        let elapsed_ms = now.elapsed().as_secs_f64() * 1e3;
-        log::debug!("logs ({:.2}ms):\n{}", elapsed_ms, text);
+        let text = self
+            .request_with("logs", &url, Method::POST, |req| req.form(&form))
+            .await?;
 
-        LogEntry::from_json(&text)
+        let logs: Vec<api::Log> = serde_json::from_str::<api::Response>(&text)
+            .context("parse response json")?
+            .data
+            .logs;
+
+        logs.into_iter().map(fritz::Log::try_from).collect()
     }
 }
