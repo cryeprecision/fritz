@@ -7,5 +7,6 @@ CREATE TABLE IF NOT EXISTS "logs"
     "message_id"          INTEGER NOT NULL,
     "category_id"         INTEGER NOT NULL,
     "repetition_datetime" INTEGER NULL,
-    "repetition_count"    INTEGER NULL
+    "repetition_count"    INTEGER NULL,
+    UNIQUE(datetime, message_id, category_id)
 )

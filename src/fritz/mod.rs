@@ -1,15 +1,16 @@
 use anyhow::Context;
 use chrono::{DateTime, Local};
+use serde::Serialize;
 
 use crate::{api, db};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Hash, PartialEq, Eq)]
 pub struct Repetition {
     pub datetime: DateTime<Local>,
     pub count: i64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Hash, PartialEq, Eq)]
 pub struct Log {
     pub datetime: DateTime<Local>,
     pub message: String,
@@ -35,6 +36,7 @@ impl std::fmt::Display for Log {
 impl From<Log> for db::Log {
     fn from(value: Log) -> Self {
         db::Log {
+            id: None,
             datetime: value.datetime.timestamp_millis(),
             message: value.message,
             message_id: value.message_id,

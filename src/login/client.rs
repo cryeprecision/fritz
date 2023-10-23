@@ -241,6 +241,7 @@ impl Client {
         Ok(LoginChallenge::from_xml_text(&text)?)
     }
 
+    /// Create a new session, doesn't check for an existing one.
     pub async fn login(&self) -> anyhow::Result<SessionId> {
         // get the challenge
         let login_challenge = self.login_challenge().await?;
@@ -253,6 +254,7 @@ impl Client {
         Ok(session_id)
     }
 
+    /// Destroy the current session if there is one.
     pub async fn logout(&self) -> anyhow::Result<()> {
         let Some(session_id) = self.check_session_id().await? else {
             *self.session_id.lock() = None;
@@ -270,6 +272,7 @@ impl Client {
         Ok(())
     }
 
+    /// Get the current certificate from the FRITZ!Box.
     pub async fn box_cert(&self) -> anyhow::Result<String> {
         let url = self.make_url("/cgi-bin/firmwarecfg");
         let session_id = self.check_or_renew_session_id().await?.to_string();
@@ -284,6 +287,7 @@ impl Client {
         Ok(text)
     }
 
+    /// Clear the logs on the FRITZ!Box.
     pub async fn clear_logs(&self) -> anyhow::Result<serde_json::Value> {
         let url = self.make_url("/data.lua");
         let session_id = self.check_or_renew_session_id().await?.to_string();
@@ -303,6 +307,9 @@ impl Client {
         serde_json::from_str(&text).context("parse json")
     }
 
+    /// Fetch logs from the FRITZ!Box.
+    ///
+    /// API returns logs ordered from **new to old** so the **newest log is at index 0**.
     pub async fn logs(&self) -> anyhow::Result<Vec<fritz::Log>> {
         let url = self.make_url("/data.lua");
         let session_id = self.check_or_renew_session_id().await?.to_string();
