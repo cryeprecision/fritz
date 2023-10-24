@@ -134,7 +134,7 @@ impl Database {
                "repetition_datetime",
                "repetition_count"
         FROM "logs"
-        ORDER BY "datetime" DESC
+        ORDER BY "id" DESC
         LIMIT ?1, ?2
             "#,
             /* 1 */ offset,
@@ -214,40 +214,23 @@ impl Database {
         // [1,2]   ->     [3,2,1]: All logs are old
         // [2,3,4] ->   [4,3,2,1]: Some logs are new
 
-        let (Some(oldest_api_log), Some(newest_api_log)) = (logs.first(), logs.last()) else {
-            log::warn!("called append_new_logs with an empty argument");
-            return Ok(&[]);
-        };
-
         // make sure the logs are sorted from old to new
         if !logs.windows(2).all(|w| w[0].datetime <= w[1].datetime) {
             log::warn!("called append_new_logs with unsorted logs: {:#?}", logs);
             return Err(anyhow::anyhow!("logs must be sorted from old to new"));
         }
 
+        // fetch the most recent log in the database to compare against
         let Some(newest_db_log) = self.select_latest_log().await? else {
             // the database is empty, all logs must be new
             self.append_logs(logs).await?;
             return Ok(logs);
         };
 
-        if newest_db_log.datetime < oldest_api_log.datetime {
-            // all given logs are new
-            self.append_logs(logs).await?;
-            return Ok(logs);
-        }
-
-        if newest_api_log.datetime < newest_db_log.datetime {
-            // all given logs are old
-            return Ok(&[]);
-        }
-
-        // find the most recent log from the database in the list of
-        // new logs to be appended.
         let most_recent_index = logs
             .iter()
             .position(|log| {
-                log.datetime == newest_db_log.datetime
+                log.earliest_timestamp() == newest_db_log.earliest_timestamp()
                     && log.message_id == newest_db_log.message_id
                     && log.category_id == newest_db_log.category_id
             })
@@ -255,8 +238,17 @@ impl Database {
         let most_recent = &logs[most_recent_index];
         let update_most_recent = most_recent.repetition != newest_db_log.repetition;
 
+        log::info!("newest db log: {:#?}", newest_db_log);
+        log::info!("condidates: {:#?}", &logs[most_recent_index..]);
+
         // if the repetition changed, update it in the database
         if update_most_recent {
+            log::info!(
+                "updating log from {:#?} to {:#?}",
+                newest_db_log,
+                most_recent
+            );
+
             self.replace_log(&newest_db_log, most_recent)
                 .await
                 .context("update most recent db log")?;
@@ -264,6 +256,8 @@ impl Database {
 
         // insert all new logs into the database
         if most_recent_index != logs.len() - 1 {
+            log::info!("appending logs: {:#?}", &logs[most_recent_index + 1..]);
+
             self.append_logs(&logs[most_recent_index + 1..])
                 .await
                 .context("insert new logs")?;

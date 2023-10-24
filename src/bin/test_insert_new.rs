@@ -1,5 +1,49 @@
 use anyhow::Context;
-use fritz_log_parser::{db, logger, login};
+use chrono::{Local, TimeZone};
+use fritz_log_parser::{db, fritz, logger};
+
+macro_rules! repetition {
+    () => {
+        None
+    };
+    ([$hour:literal, $minute:literal, $second:literal], $count:literal) => {
+        Some(::fritz_log_parser::fritz::Repetition {
+            datetime: Local
+                .with_ymd_and_hms(2023, 01, 01, $hour, $minute, $second)
+                .single()
+                .unwrap(),
+            count: $count,
+        })
+    };
+}
+
+macro_rules! log {
+    ([$hour:literal, $minute:literal, $second:literal], $message_id:literal, $category_id:literal, $($repetition:tt)+) => {
+        ::fritz_log_parser::fritz::Log {
+            datetime: Local
+                .with_ymd_and_hms(2023, 01, 01, $hour, $minute, $second)
+                .single()
+                .unwrap(),
+            message: "message".to_string(),
+            message_id: $message_id,
+            category_id: $category_id,
+            repetition: $($repetition)+,
+        }
+    };
+}
+
+async fn insert_logs_evil(
+    db: &db::Database,
+    logs: &[fritz::Log],
+) -> anyhow::Result<Vec<fritz::Log>> {
+    for i in 1..=logs.len() {
+        let _ = db
+            .append_new_logs(&logs[..i])
+            .await
+            .with_context(|| format!("insert until {}", i))?;
+    }
+    db.select_latest_logs(0, 500).await
+}
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -7,25 +51,45 @@ async fn main() -> anyhow::Result<()> {
     let path = dotenv::dotenv().context("load .env file")?;
     log::info!("loaded .env from {}", path.to_str().expect("utf-8"));
 
-    let db_url = std::env::var("DATABASE_URL").unwrap_or("sqlite://logs.db3".to_string());
-    let db = db::Database::open(&db_url).await.context("open database")?;
-    db.clear_logs().await?; // <-!-!-!-------------------------------------------
+    // let db_url = std::env::var("DATABASE_URL").unwrap_or("sqlite://logs.db3".to_string());
+    let db = db::Database::open_in_memory()
+        .await
+        .context("open database")?;
 
-    let client = login::Client::new(None, None, None, None).await?;
+    {
+        db.clear_logs().await?;
 
-    let mut logs = client.logs().await.context("fetch logs")?;
-    logs.reverse();
+        let logs = vec![
+            log!([01, 01, 01], 01, 01, repetition!([01, 01, 01], 2)),
+            log!([01, 01, 01], 01, 01, repetition!([01, 01, 01], 3)),
+            log!([01, 01, 02], 01, 01, repetition!([01, 01, 01], 4)),
+            log!([01, 01, 03], 01, 01, repetition!([01, 01, 01], 5)),
+        ];
+        let expected = vec![log!([01, 01, 03], 01, 01, repetition!([01, 01, 01], 5))];
 
-    log::info!("entries in db: {}", db.logs_count().await?);
-    let _ = db.append_new_logs(&logs).await.context("insert logs 1")?;
-    log::info!("entries in db: {}", db.logs_count().await?);
-    let appended_2 = db.append_new_logs(&logs).await.context("insert logs 2")?;
-    log::info!("entries in db: {}", db.logs_count().await?);
-    let appended_3 = db.append_new_logs(&logs).await.context("insert logs 3")?;
-    log::info!("entries in db: {}", db.logs_count().await?);
+        let db_logs = insert_logs_evil(&db, &logs).await?;
 
-    log::info!("appended 2: {:?}", appended_2);
-    log::info!("appended 3: {:?}", appended_3);
+        if db_logs != expected {
+            log::error!("lhs != rhs\n\tlhs: {:#?}\n\trhs: {:#?}", db_logs, expected)
+        }
+    }
+    {
+        db.clear_logs().await?;
+
+        let logs = vec![
+            log!([01, 01, 01], 01, 01, repetition!()),
+            log!([01, 01, 01], 01, 01, repetition!([01, 01, 01], 2)),
+            log!([01, 01, 02], 01, 01, repetition!([01, 01, 01], 3)),
+            log!([01, 01, 03], 01, 01, repetition!([01, 01, 01], 4)),
+        ];
+        let expected = vec![log!([01, 01, 03], 01, 01, repetition!([01, 01, 01], 4))];
+
+        let db_logs = insert_logs_evil(&db, &logs).await?;
+
+        if db_logs != expected {
+            log::error!("lhs != rhs\n\tlhs: {:#?}\n\trhs: {:#?}", db_logs, expected)
+        }
+    }
 
     db.close().await;
     Ok(())

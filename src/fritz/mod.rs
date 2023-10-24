@@ -19,6 +19,19 @@ pub struct Log {
     pub repetition: Option<Repetition>,
 }
 
+impl Log {
+    pub fn earliest_timestamp(&self) -> i64 {
+        self.repetition
+            .as_ref()
+            .map_or(self.datetime.timestamp_millis(), |rep| {
+                rep.datetime.timestamp_millis()
+            })
+    }
+    pub fn latest_timestamp(&self) -> i64 {
+        self.datetime.timestamp_millis()
+    }
+}
+
 impl std::fmt::Display for Log {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
