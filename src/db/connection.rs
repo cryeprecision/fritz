@@ -227,6 +227,27 @@ impl Database {
             return Ok(logs);
         };
 
+        // check if _all_ new logs are actually old
+        //
+        // if the newest log in the argument is older than the latest
+        // log in the database, all logs in the argument must be old.
+        if logs.last().map_or(false, |log| {
+            log.latest_timestamp() < newest_db_log.latest_timestamp()
+        }) {
+            return Ok(&[]);
+        }
+
+        // check if _all_ new logs are new
+        //
+        // if the oldest log in the argument is newer than the latest
+        // log in the database, all logs in the argument must be new.
+        if logs.first().map_or(false, |log| {
+            log.earliest_timestamp() > newest_db_log.latest_timestamp()
+        }) {
+            self.append_logs(logs).await?;
+            return Ok(logs);
+        }
+
         // this index is at most `logs.len() - 1` (obviously)
         let most_recent_index = logs
             .iter()

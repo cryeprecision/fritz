@@ -1,0 +1,14 @@
+/.vscode/
+/.git/
+/data/certificates/
+/data/database/
+/data/examples/
+/data/responses/
+/target/
+
+/.dockerignore
+/.env
+/.gitignore
+/docker-compose.yml
+/Dockerfile
+/README.md
