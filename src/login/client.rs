@@ -21,6 +21,8 @@ pub struct Client {
     username: String,
     /// Password to log in with
     password: String,
+    /// Path to save responses to
+    save_response_path: Option<PathBuf>,
 }
 
 impl Client {
@@ -69,39 +71,44 @@ impl Client {
             .build()
             .context("invalid http client configuration")?;
 
+        let save_response_path = Self::save_response_path().await;
+
         Ok(Client {
             client,
             domain,
             session_id: Mutex::new(None),
             username,
             password,
+            save_response_path,
         })
     }
 
-    pub async fn save_response(name: &str, text: &str) {
+    /// Determine path to save responses to from environment variables.
+    pub async fn save_response_path() -> Option<PathBuf> {
         let Ok(save_response) = dotenv::var("FRITZBOX_SAVE_RESPONSE") else {
-            log::warn!("missing env var FRITZBOX_SAVE_RESPONSE");
-            return;
+            return None;
         };
         let Ok(save_response) = save_response.parse::<bool>() else {
             log::warn!("couldn't parse FRITZBOX_SAVE_RESPONSE as bool");
-            return;
+            return None;
         };
         if !save_response {
-            return;
+            return None;
         }
 
         let Ok(save_response_path) = dotenv::var("FRITZBOX_SAVE_RESPONSE_PATH") else {
             log::warn!("missing env var FRITZBOX_SAVE_RESPONSE_PATH");
-            return;
+            return None;
         };
 
-        let mut save_response_path = PathBuf::from(save_response_path);
+        let save_response_path = PathBuf::from(save_response_path);
         match tokio::fs::metadata(&save_response_path).await {
             Ok(metadata) => {
                 if !metadata.is_dir() {
-                    log::warn!("FRITZBOX_SAVE_RESPONSE_PATH doesn't point to a folder");
+                    log::warn!("FRITZBOX_SAVE_RESPONSE_PATH does not point to a folder");
+                    return None;
                 }
+                Some(save_response_path)
             }
             Err(_) => {
                 if let Err(err) = tokio::fs::create_dir(&save_response_path).await {
@@ -109,22 +116,25 @@ impl Client {
                         "couldn't create folder to FRITZBOX_SAVE_RESPONSE_PATH: {:?}",
                         err
                     );
-                    return;
+                    None
                 } else {
                     log::info!("created folder to FRITZBOX_SAVE_RESPONSE_PATH");
+                    Some(save_response_path)
                 }
             }
         }
+    }
+
+    pub async fn save_response(&self, name: &str, text: &str) {
+        let Some(mut path) = self.save_response_path.as_ref().map(|p| p.clone()) else {
+            return;
+        };
 
         let now = Local::now().format("%Y-%m-%d_%H-%M-%S.%3f");
-        save_response_path.push(format!("response_{}_{}.txt", now, name));
+        path.push(format!("response_{}_{}.txt", now, name));
 
-        if let Err(err) = tokio::fs::write(&save_response_path, text).await {
-            log::warn!(
-                "couldn't save {}: {:?}",
-                save_response_path.to_string_lossy(),
-                err
-            );
+        if let Err(err) = tokio::fs::write(&path, text).await {
+            log::warn!("couldn't save {}: {:?}", path.to_string_lossy(), err);
         }
     }
 
@@ -158,7 +168,7 @@ impl Client {
             .unwrap_or(String::from("0000000000000000"));
 
         log::info!(
-            "{} request {} ({:?}) took {:5.0}ms (session-id: {})",
+            "{} request to {} ({:?}) took {:.0}ms (session-id: {})",
             name,
             url,
             method,
@@ -166,7 +176,7 @@ impl Client {
             session_id,
         );
 
-        Self::save_response(name, &text).await;
+        self.save_response(name, &text).await;
 
         Ok(text)
     }

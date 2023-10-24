@@ -30,7 +30,7 @@ impl Database {
     }
 
     async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::migrate!("./migrations/")
+        sqlx::migrate!("./data/migrations/")
             .run(pool)
             .await
             .context("migrate database")?;
@@ -203,7 +203,7 @@ impl Database {
     ///
     /// Logs must be sorted from **old to new** so the oldest log is at index 0.
     ///
-    /// Returns a slice over the inserted elements.
+    /// Returns a slice over the inserted or updated elements.
     pub async fn append_new_logs<'a>(
         &self,
         logs: &'a [fritz::Log],

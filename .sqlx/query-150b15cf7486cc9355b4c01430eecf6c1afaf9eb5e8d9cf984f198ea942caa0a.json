@@ -1,36 +1,41 @@
 {
   "db_name": "SQLite",
-  "query": "\n        SELECT \"datetime\",\n               \"message\",\n               \"message_id\",\n               \"category_id\",\n               \"repetition_datetime\",\n               \"repetition_count\"\n        FROM \"logs\"\n        ORDER BY \"datetime\" DESC\n        LIMIT ?1, ?2\n            ",
+  "query": "\n        SELECT \"id\",\n               \"datetime\",\n               \"message\",\n               \"message_id\",\n               \"category_id\",\n               \"repetition_datetime\",\n               \"repetition_count\"\n        FROM \"logs\"\n        ORDER BY \"id\" DESC\n        LIMIT ?1, ?2\n            ",
   "describe": {
     "columns": [
       {
-        "name": "datetime",
+        "name": "id",
         "ordinal": 0,
         "type_info": "Int64"
       },
       {
-        "name": "message",
+        "name": "datetime",
         "ordinal": 1,
+        "type_info": "Int64"
+      },
+      {
+        "name": "message",
+        "ordinal": 2,
         "type_info": "Text"
       },
       {
         "name": "message_id",
-        "ordinal": 2,
-        "type_info": "Int64"
-      },
-      {
-        "name": "category_id",
         "ordinal": 3,
         "type_info": "Int64"
       },
       {
-        "name": "repetition_datetime",
+        "name": "category_id",
         "ordinal": 4,
         "type_info": "Int64"
       },
       {
-        "name": "repetition_count",
+        "name": "repetition_datetime",
         "ordinal": 5,
+        "type_info": "Int64"
+      },
+      {
+        "name": "repetition_count",
+        "ordinal": 6,
         "type_info": "Int64"
       }
     ],
@@ -42,9 +47,10 @@
       false,
       false,
       false,
+      false,
       true,
       true
     ]
   },
-  "hash": "569dedf2d1f08bf7ee356bc3b52201345990d8a595fbdf5d5aed9b051f200e9e"
+  "hash": "150b15cf7486cc9355b4c01430eecf6c1afaf9eb5e8d9cf984f198ea942caa0a"
 }

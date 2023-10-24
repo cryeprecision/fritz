@@ -1,9 +1,7 @@
 /.vscode/
+/data/certificates/
+/data/database/
+/data/examples/
+/data/responses/
 /target/
-/examples/
-/responses/
-/*.db3
-/*.db
-/*.pem
 /.env
-/test_*.*

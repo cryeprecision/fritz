@@ -4,6 +4,13 @@
 
 - None `:)`
 
+## Commands
+
+- Reset the database
+  - `cargo sqlx database reset --source ./data/migrations/`
+- Create the database
+  - `cargo sqlx database setup --source ./data/migrations/ --sqlite-create-db-wal false`
+
 ## Resources
 
 - GitHub
