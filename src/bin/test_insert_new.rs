@@ -32,15 +32,15 @@ macro_rules! log {
     };
 }
 
-async fn insert_logs_evil(
+async fn insert_logs_single(
     db: &db::Database,
     logs: &[fritz::Log],
 ) -> anyhow::Result<Vec<fritz::Log>> {
-    for i in 1..=logs.len() {
+    for i in 0..logs.len() {
         let _ = db
-            .append_new_logs(&logs[..i])
+            .append_new_logs(&logs[i..i + 1])
             .await
-            .with_context(|| format!("insert until {}", i))?;
+            .with_context(|| format!("insert {}", i))?;
     }
     db.select_latest_logs(0, 500).await
 }
@@ -59,16 +59,31 @@ async fn main() -> anyhow::Result<()> {
     {
         db.clear_logs().await?;
 
-        let logs = vec![
-            log!([01, 01, 01], 01, 01, repetition!([01, 01, 01], 2)),
-            log!([01, 01, 01], 01, 01, repetition!([01, 01, 01], 3)),
-            log!([01, 01, 02], 01, 01, repetition!([01, 01, 01], 4)),
+        let _ = insert_logs_single(
+            &db,
+            &vec![
+                log!([01, 01, 01], 01, 01, repetition!([01, 01, 01], 2)),
+                log!([01, 01, 01], 01, 01, repetition!([01, 01, 01], 3)),
+                log!([01, 01, 02], 01, 01, repetition!([01, 01, 01], 4)),
+                log!([01, 01, 03], 01, 01, repetition!([01, 01, 01], 5)),
+            ],
+        )
+        .await?;
+
+        db.append_new_logs(&vec![
+            log!([01, 01, 03], 01, 01, repetition!([01, 01, 01], 5)),
+            log!([01, 01, 04], 02, 02, repetition!()),
+        ])
+        .await?;
+
+        let expected = vec![
+            log!([01, 01, 04], 02, 02, repetition!()),
             log!([01, 01, 03], 01, 01, repetition!([01, 01, 01], 5)),
         ];
-        let expected = vec![log!([01, 01, 03], 01, 01, repetition!([01, 01, 01], 5))];
 
-        let db_logs = insert_logs_evil(&db, &logs).await?;
+        let db_logs = db.select_latest_logs(0, 500).await?;
 
+        log::info!("final db_logs: {:#?}", db_logs);
         if db_logs != expected {
             log::error!("lhs != rhs\n\tlhs: {:#?}\n\trhs: {:#?}", db_logs, expected)
         }
@@ -84,8 +99,9 @@ async fn main() -> anyhow::Result<()> {
         ];
         let expected = vec![log!([01, 01, 03], 01, 01, repetition!([01, 01, 01], 4))];
 
-        let db_logs = insert_logs_evil(&db, &logs).await?;
+        let db_logs = insert_logs_single(&db, &logs).await?;
 
+        log::info!("final db_logs: {:#?}", db_logs);
         if db_logs != expected {
             log::error!("lhs != rhs\n\tlhs: {:#?}\n\trhs: {:#?}", db_logs, expected)
         }

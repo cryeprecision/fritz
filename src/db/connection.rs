@@ -227,6 +227,7 @@ impl Database {
             return Ok(logs);
         };
 
+        // this index is at most `logs.len() - 1` (obviously)
         let most_recent_index = logs
             .iter()
             .position(|log| {
@@ -235,39 +236,28 @@ impl Database {
                     && log.category_id == newest_db_log.category_id
             })
             .context("couldn't find most recent db log in logs argument")?;
-        let most_recent = &logs[most_recent_index];
-        let update_most_recent = most_recent.repetition != newest_db_log.repetition;
 
-        log::info!("newest db log: {:#?}", newest_db_log);
-        log::info!("condidates: {:#?}", &logs[most_recent_index..]);
+        let candidates = logs.split_at(most_recent_index).1;
+        let first_candidate = candidates.first().expect("at least one candidate");
+        let update_most_recent = first_candidate.repetition != newest_db_log.repetition;
 
         // if the repetition changed, update it in the database
         if update_most_recent {
-            log::info!(
-                "updating log from {:#?} to {:#?}",
-                newest_db_log,
-                most_recent
-            );
-
-            self.replace_log(&newest_db_log, most_recent)
+            self.replace_log(&newest_db_log, first_candidate)
                 .await
                 .context("update most recent db log")?;
         }
 
-        // insert all new logs into the database
-        if most_recent_index != logs.len() - 1 {
-            log::info!("appending logs: {:#?}", &logs[most_recent_index + 1..]);
+        // add all new logs to the database
+        self.append_logs(&candidates[1..])
+            .await
+            .context("insert new logs")?;
 
-            self.append_logs(&logs[most_recent_index + 1..])
-                .await
-                .context("insert new logs")?;
-        }
-
+        // if we updated the most recent log, include it in the list
         Ok(if update_most_recent {
-            // we updated the most recent log, so include it in the list
-            &logs[most_recent_index..]
+            &candidates[..]
         } else {
-            &logs[most_recent_index + 1..]
+            &candidates[1..]
         })
     }
 }
