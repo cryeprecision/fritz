@@ -11,7 +11,7 @@ use super::{LoginChallenge, SessionId};
 use crate::{api, db, fritz};
 
 fn elapsed_ms(start: &Instant) -> i64 {
-    start.elapsed().as_millis().max(i64::MAX as u128) as i64
+    start.elapsed().as_millis().min(i64::MAX as u128) as i64
 }
 
 pub struct Client {
@@ -179,7 +179,7 @@ impl Client {
         let text = text.context("response code non 2XX")?;
 
         log::info!(
-            "{} request to {} ({:?} - {}) took {}ms (session-id: {:?})",
+            "{} request to {} ({} - {}) took {}ms (session-id: {:?})",
             name,
             meta.url,
             meta.method,
@@ -211,7 +211,7 @@ impl Client {
 
         if let Some(database) = self.database.as_ref() {
             if let Err(err) = database.insert_request(&meta).await {
-                log::warn!("couldn't insert request metadata: {}", err);
+                log::warn!("couldn't insert request metadata: {}: {:#?}", err, meta);
             }
         }
 

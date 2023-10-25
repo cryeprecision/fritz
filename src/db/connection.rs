@@ -291,15 +291,19 @@ impl Database {
         (
             "datetime",
             "url",
+            "method",
             "duration_ms",
-            "response_code"
+            "response_code",
+            "session_id"
         )
-        VALUES (?1, ?2, ?3, ?4)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
             "#,
             /* 1 */ req.datetime,
             /* 2 */ req.url,
-            /* 3 */ req.duration_ms,
-            /* 4 */ req.response_code,
+            /* 3 */ req.method,
+            /* 4 */ req.duration_ms,
+            /* 5 */ req.response_code,
+            /* 6 */ req.session_id,
         )
         .execute(&self.pool)
         .await
