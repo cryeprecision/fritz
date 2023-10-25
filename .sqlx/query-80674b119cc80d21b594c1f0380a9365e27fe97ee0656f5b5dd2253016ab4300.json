@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO \"requests\"\n        (\n            \"datetime\",\n            \"url\",\n            \"duration_ms\",\n            \"response_code\"\n        )\n        VALUES (?1, ?2, ?3, ?4)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "80674b119cc80d21b594c1f0380a9365e27fe97ee0656f5b5dd2253016ab4300"
+}
