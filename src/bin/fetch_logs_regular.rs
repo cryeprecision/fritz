@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use anyhow::Context;
+use chrono::Local;
 use fritz_log_parser::{db, logger, login};
 use tokio::time::MissedTickBehavior;
 
@@ -16,7 +17,7 @@ async fn main() -> anyhow::Result<()> {
     let db_url = std::env::var("DATABASE_URL").context("load DATABASE_URL")?;
     let db = db::Database::open(&db_url).await.context("open database")?;
 
-    let client = login::Client::new(None, None, None, None).await?;
+    let client = login::Client::new(None, None, None, None, Some(&db)).await?;
     let _ = client.login().await.context("initial login attempt")?;
 
     let mut interval = {
@@ -58,6 +59,17 @@ async fn main() -> anyhow::Result<()> {
             .await
             .context("insert logs")?
             .len();
+
+        if let Err(err) = db
+            .insert_update(&db::Update {
+                id: None,
+                datetime: db::util::local_to_utc_timestamp(Local::now()),
+                upserted_rows: upserted.min(i64::MAX as usize) as i64,
+            })
+            .await
+        {
+            log::warn!("couldn't insert update metadata into db: {}", err);
+        }
 
         log::info!("upserted {} logs", upserted);
     }

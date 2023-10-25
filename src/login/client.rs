@@ -8,7 +8,11 @@ use reqwest::tls::Version;
 use reqwest::{Method, RequestBuilder};
 
 use super::{LoginChallenge, SessionId};
-use crate::{api, fritz};
+use crate::{api, db, fritz};
+
+fn elapsed_ms(start: &Instant) -> i64 {
+    start.elapsed().as_millis().max(i64::MAX as u128) as i64
+}
 
 pub struct Client {
     /// Use to make REST requests
@@ -23,6 +27,8 @@ pub struct Client {
     password: String,
     /// Path to save responses to
     save_response_path: Option<PathBuf>,
+    /// Database
+    database: Option<db::Database>,
 }
 
 impl Client {
@@ -31,6 +37,7 @@ impl Client {
         username: Option<&str>,
         password: Option<&str>,
         root_cert: Option<&[u8]>,
+        pool: Option<&db::Database>,
     ) -> anyhow::Result<Client> {
         fn resolve_var(key: &str, default: Option<&str>) -> anyhow::Result<String> {
             default.map(|s| Ok(s.to_string())).unwrap_or_else(|| {
@@ -80,6 +87,7 @@ impl Client {
             username,
             password,
             save_response_path,
+            database: pool.cloned(),
         })
     }
 
@@ -126,7 +134,7 @@ impl Client {
     }
 
     pub async fn save_response(&self, name: &str, text: &str) {
-        let Some(mut path) = self.save_response_path.as_ref().map(|p| p.clone()) else {
+        let Some(mut path) = self.save_response_path.as_ref().cloned() else {
             return;
         };
 
@@ -136,6 +144,53 @@ impl Client {
         if let Err(err) = tokio::fs::write(&path, text).await {
             log::warn!("couldn't save {}: {:?}", path.to_string_lossy(), err);
         }
+    }
+
+    pub async fn request_with_inner<F>(
+        &self,
+        name: &str,
+        url: &str,
+        method: Method,
+        func: F,
+        meta: &mut db::Request,
+    ) -> anyhow::Result<String>
+    where
+        F: FnOnce(RequestBuilder) -> RequestBuilder,
+    {
+        meta.url = url.to_string();
+        meta.method = method.to_string();
+        meta.datetime = db::util::local_to_utc_timestamp(Local::now());
+
+        let now = Instant::now();
+        let mut builder = self.client.request(method.clone(), url);
+        builder = func(builder);
+
+        let resp = builder.send().await.context("send request")?;
+        meta.response_code = Some(i64::from(resp.status().as_u16()));
+
+        if let Err(err) = resp.error_for_status_ref() {
+            meta.duration_ms = elapsed_ms(&now);
+            return Err(err).context("response status non 2XX");
+        }
+
+        let text = resp.text().await;
+        meta.duration_ms = elapsed_ms(&now);
+        meta.session_id = (*self.session_id.lock()).map(|id| id.to_string());
+        let text = text.context("response code non 2XX")?;
+
+        log::info!(
+            "{} request to {} ({:?} - {}) took {}ms (session-id: {:?})",
+            name,
+            meta.url,
+            meta.method,
+            meta.response_code.unwrap_or(0),
+            meta.duration_ms,
+            meta.session_id,
+        );
+
+        self.save_response(name, &text).await;
+
+        Ok(text)
     }
 
     pub async fn request_with<F>(
@@ -148,37 +203,19 @@ impl Client {
     where
         F: FnOnce(RequestBuilder) -> RequestBuilder,
     {
-        let now = Instant::now();
-        let mut builder = self.client.request(method.clone(), url);
-        builder = func(builder);
+        let mut meta = db::Request::default();
 
-        let resp = builder.send().await.context("send request")?;
-        if let Err(err) = resp.error_for_status_ref() {
-            return Err(err).context("response status 2XX");
+        let resp = self
+            .request_with_inner(name, url, method, func, &mut meta)
+            .await;
+
+        if let Some(database) = self.database.as_ref() {
+            if let Err(err) = database.insert_request(&meta).await {
+                log::warn!("couldn't insert request metadata: {}", err);
+            }
         }
 
-        let text = resp.text().await.context("decode response as text")?;
-        let elapsed_ms = now.elapsed().as_secs_f64() * 1e3;
-
-        let session_id = self
-            .session_id
-            .lock()
-            .clone()
-            .map(|id| id.to_string())
-            .unwrap_or(String::from("0000000000000000"));
-
-        log::info!(
-            "{} request to {} ({:?}) took {:.0}ms (session-id: {})",
-            name,
-            url,
-            method,
-            elapsed_ms,
-            session_id,
-        );
-
-        self.save_response(name, &text).await;
-
-        Ok(text)
+        resp
     }
 
     /// Example: `client.make_url("/cgi-bin/firmwarecfg")` will produce
@@ -196,7 +233,7 @@ impl Client {
 
     async fn check_session_id(&self) -> anyhow::Result<Option<SessionId>> {
         // We don't have a SessionId yet
-        let Some(session_id) = self.session_id.lock().clone() else {
+        let Some(session_id) = *self.session_id.lock() else {
             return Ok(None);
         };
 
@@ -214,8 +251,7 @@ impl Client {
             LoginChallenge::from_xml_text(&text).context("couldn't parse response xml")?;
         Ok(challenge
             .session_id
-            .map(|id| if id == session_id { Some(id) } else { None })
-            .flatten())
+            .and_then(|id| if id == session_id { Some(id) } else { None }))
     }
 
     /// Get the login challenge
@@ -260,7 +296,7 @@ impl Client {
         // get the session id
         let session_id = response.session_id.context("missing session id")?;
 
-        *self.session_id.lock() = Some(session_id.clone());
+        *self.session_id.lock() = Some(session_id);
         Ok(session_id)
     }
 

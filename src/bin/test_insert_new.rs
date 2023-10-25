@@ -9,7 +9,7 @@ macro_rules! repetition {
     ([$hour:literal, $minute:literal, $second:literal], $count:literal) => {
         Some(::fritz_log_parser::fritz::Repetition {
             datetime: Local
-                .with_ymd_and_hms(2023, 01, 01, $hour, $minute, $second)
+                .with_ymd_and_hms(2023, 1, 1, $hour, $minute, $second)
                 .single()
                 .unwrap(),
             count: $count,
@@ -21,7 +21,7 @@ macro_rules! log {
     ([$hour:literal, $minute:literal, $second:literal], $message_id:literal, $category_id:literal, $($repetition:tt)+) => {
         ::fritz_log_parser::fritz::Log {
             datetime: Local
-                .with_ymd_and_hms(2023, 01, 01, $hour, $minute, $second)
+                .with_ymd_and_hms(2023, 1, 1, $hour, $minute, $second)
                 .single()
                 .unwrap(),
             message: "message".to_string(),
@@ -62,23 +62,23 @@ async fn main() -> anyhow::Result<()> {
         let _ = insert_logs_single(
             &db,
             &vec![
-                log!([01, 01, 01], 01, 01, repetition!([01, 01, 01], 2)),
-                log!([01, 01, 01], 01, 01, repetition!([01, 01, 01], 3)),
-                log!([01, 01, 02], 01, 01, repetition!([01, 01, 01], 4)),
-                log!([01, 01, 03], 01, 01, repetition!([01, 01, 01], 5)),
+                log!([1, 1, 1], 1, 1, repetition!([1, 1, 1], 2)),
+                log!([1, 1, 1], 1, 1, repetition!([1, 1, 1], 3)),
+                log!([1, 1, 2], 1, 1, repetition!([1, 1, 1], 4)),
+                log!([1, 1, 3], 1, 1, repetition!([1, 1, 1], 5)),
             ],
         )
         .await?;
 
-        db.append_new_logs(&vec![
-            log!([01, 01, 03], 01, 01, repetition!([01, 01, 01], 5)),
-            log!([01, 01, 04], 02, 02, repetition!()),
+        db.append_new_logs(&[
+            log!([1, 1, 3], 1, 1, repetition!([1, 1, 1], 5)),
+            log!([1, 1, 4], 2, 2, repetition!()),
         ])
         .await?;
 
         let expected = vec![
-            log!([01, 01, 04], 02, 02, repetition!()),
-            log!([01, 01, 03], 01, 01, repetition!([01, 01, 01], 5)),
+            log!([1, 1, 4], 2, 2, repetition!()),
+            log!([1, 1, 3], 1, 1, repetition!([1, 1, 1], 5)),
         ];
 
         let db_logs = db.select_latest_logs(0, 500).await?;
@@ -92,12 +92,12 @@ async fn main() -> anyhow::Result<()> {
         db.clear_logs().await?;
 
         let logs = vec![
-            log!([01, 01, 01], 01, 01, repetition!()),
-            log!([01, 01, 01], 01, 01, repetition!([01, 01, 01], 2)),
-            log!([01, 01, 02], 01, 01, repetition!([01, 01, 01], 3)),
-            log!([01, 01, 03], 01, 01, repetition!([01, 01, 01], 4)),
+            log!([1, 1, 1], 1, 1, repetition!()),
+            log!([1, 1, 1], 1, 1, repetition!([1, 1, 1], 2)),
+            log!([1, 1, 2], 1, 1, repetition!([1, 1, 1], 3)),
+            log!([1, 1, 3], 1, 1, repetition!([1, 1, 1], 4)),
         ];
-        let expected = vec![log!([01, 01, 03], 01, 01, repetition!([01, 01, 01], 4))];
+        let expected = vec![log!([1, 1, 3], 1, 1, repetition!([1, 1, 1], 4))];
 
         let db_logs = insert_logs_single(&db, &logs).await?;
 

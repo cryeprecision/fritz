@@ -1,8 +1,10 @@
 use anyhow::Context;
 use sqlx::SqlitePool;
 
+use super::model::{Request, Update};
 use crate::fritz;
 
+#[derive(Clone)]
 pub struct Database {
     pool: SqlitePool,
 }
@@ -232,7 +234,7 @@ impl Database {
         // if the newest log in the argument is older than the latest
         // log in the database, all logs in the argument must be old.
         if logs.last().map_or(false, |log| {
-            log.latest_timestamp() < newest_db_log.latest_timestamp()
+            log.latest_timestamp_utc() < newest_db_log.latest_timestamp_utc()
         }) {
             return Ok(&[]);
         }
@@ -242,7 +244,7 @@ impl Database {
         // if the oldest log in the argument is newer than the latest
         // log in the database, all logs in the argument must be new.
         if logs.first().map_or(false, |log| {
-            log.earliest_timestamp() > newest_db_log.latest_timestamp()
+            log.earliest_timestamp_utc() > newest_db_log.latest_timestamp_utc()
         }) {
             self.append_logs(logs).await?;
             return Ok(logs);
@@ -252,7 +254,7 @@ impl Database {
         let most_recent_index = logs
             .iter()
             .position(|log| {
-                log.earliest_timestamp() == newest_db_log.earliest_timestamp()
+                log.earliest_timestamp_utc() == newest_db_log.earliest_timestamp_utc()
                     && log.message_id == newest_db_log.message_id
                     && log.category_id == newest_db_log.category_id
             })
@@ -276,9 +278,53 @@ impl Database {
 
         // if we updated the most recent log, include it in the list
         Ok(if update_most_recent {
-            &candidates[..]
+            candidates
         } else {
             &candidates[1..]
         })
+    }
+
+    pub async fn insert_request(&self, req: &Request) -> anyhow::Result<()> {
+        sqlx::query!(
+            r#"
+        INSERT INTO "requests"
+        (
+            "datetime",
+            "url",
+            "duration_ms",
+            "response_code"
+        )
+        VALUES (?1, ?2, ?3, ?4)
+            "#,
+            /* 1 */ req.datetime,
+            /* 2 */ req.url,
+            /* 3 */ req.duration_ms,
+            /* 4 */ req.response_code,
+        )
+        .execute(&self.pool)
+        .await
+        .context("insert request")?;
+
+        Ok(())
+    }
+
+    pub async fn insert_update(&self, update: &Update) -> anyhow::Result<()> {
+        sqlx::query!(
+            r#"
+        INSERT INTO "updates"
+        (
+            "datetime",
+            "upserted_rows"
+        )
+        VALUES (?1, ?2)
+            "#,
+            /* 1 */ update.datetime,
+            /* 2 */ update.upserted_rows,
+        )
+        .execute(&self.pool)
+        .await
+        .context("insert update")?;
+
+        Ok(())
     }
 }

@@ -9,4 +9,4 @@ CREATE TABLE IF NOT EXISTS "logs"
     "repetition_datetime" INTEGER NULL,
     "repetition_count"    INTEGER NULL,
     UNIQUE(datetime, message_id, category_id)
-)
+);

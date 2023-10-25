@@ -1,8 +1,15 @@
 # fritz-log-parser
 
-## Problems
+## Timezone
 
-- None `:)`
+Need to set the `TZ` docker container environment variable to the same timezone as the FRITZ!Box.
+Logs fetched from the FRITZ!Box are assumed to be in the `Local` Timezone.
+
+For example, if the timezone `Europe/Berlin` is set in the FRITZ!Box, `TZ=Europe/Berlin` should be
+passed to the docker container. This can be confirmed by running `docker exec -it <CONTAINER-NAME> date`.
+
+Before inserting logs into the database, they are converted from `Local` to `Utc` time and when
+fetching logs from the database they are converted from `Utc` to `Local` time.
 
 ## Commands
 

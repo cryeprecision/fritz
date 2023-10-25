@@ -40,7 +40,7 @@ type SessionResponseParseResult<T> = std::result::Result<T, SessionResponseParse
 
 impl LoginChallenge {
     pub(crate) fn from_xml_text(xml: &str) -> SessionResponseParseResult<LoginChallenge> {
-        Self::from_xml(&roxmltree::Document::parse(&xml)?)
+        Self::from_xml(&roxmltree::Document::parse(xml)?)
     }
 
     pub(crate) fn from_xml(doc: &Document) -> SessionResponseParseResult<LoginChallenge> {
