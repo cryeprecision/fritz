@@ -157,9 +157,10 @@ impl Client {
     where
         F: FnOnce(RequestBuilder) -> RequestBuilder,
     {
+        meta.datetime = db::util::local_to_utc_timestamp(Local::now());
+        meta.name = name.to_string();
         meta.url = url.to_string();
         meta.method = method.to_string();
-        meta.datetime = db::util::local_to_utc_timestamp(Local::now());
 
         let now = Instant::now();
         let mut builder = self.client.request(method.clone(), url);
@@ -180,10 +181,10 @@ impl Client {
 
         log::info!(
             "{} request to {} ({} - {}) took {}ms (session-id: {:?})",
-            name,
+            meta.name,
             meta.url,
             meta.method,
-            meta.response_code.unwrap_or(0),
+            meta.response_code.unwrap_or(-1),
             meta.duration_ms,
             meta.session_id,
         );

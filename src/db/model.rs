@@ -15,6 +15,7 @@ pub struct Log {
 pub struct Request {
     pub id: Option<i64>,
     pub datetime: i64,
+    pub name: String,
     pub url: String,
     pub method: String,
     pub duration_ms: i64,

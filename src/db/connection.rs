@@ -290,20 +290,22 @@ impl Database {
         INSERT INTO "requests"
         (
             "datetime",
+            "name",
             "url",
             "method",
             "duration_ms",
             "response_code",
             "session_id"
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             "#,
             /* 1 */ req.datetime,
-            /* 2 */ req.url,
-            /* 3 */ req.method,
-            /* 4 */ req.duration_ms,
-            /* 5 */ req.response_code,
-            /* 6 */ req.session_id,
+            /* 2 */ req.name,
+            /* 3 */ req.url,
+            /* 4 */ req.method,
+            /* 5 */ req.duration_ms,
+            /* 6 */ req.response_code,
+            /* 7 */ req.session_id,
         )
         .execute(&self.pool)
         .await
