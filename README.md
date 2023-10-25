@@ -17,7 +17,7 @@ as I see it. Please make sure the following requrements are met:
 
 See **Deploy** section for an example configuration.
 
-- `DATABASE_URL`: See [`sqlx`](https://docs.rs/sqlx/latest/sqlx/), must point to a SQLite database.
+- `DATABASE_URL`: See [`sqlx`](https://docs.rs/sqlx/latest/sqlx/), must point to a SQLite database. Also see [github.com/launchbadge/sqlx/issues/1114#issuecomment-827815038](https://github.com/launchbadge/sqlx/issues/1114#issuecomment-827815038).
 - `FRITZBOX_DOMAIN`: Domain part of the FRITZ!Box URL. (e.g. `192.168.178.1` or `fritz.box`)
 - `FRITZBOX_USERNAME`: Username of the user this service should use.
 - `FRITZBOX_PASSWORD`: Password of the user this service should use.
