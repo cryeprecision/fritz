@@ -1,5 +1,7 @@
 # fritz-log-parser
 
+Actually more like `fritz-log-saver`, this repo started out as a parsing library.
+
 ## Contributing
 
 Contributions are welcome! Just open a pull request and I'll take a look as soon
