@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use chrono::Local;
-use fritz_log_parser::{db, logger, login};
+use fritz_log_parser::{api, db, logger};
 use tokio::time::MissedTickBehavior;
 
 #[tokio::main(flavor = "current_thread")]
@@ -17,7 +17,7 @@ async fn main() -> anyhow::Result<()> {
     let db_url = std::env::var("DATABASE_URL").context("load DATABASE_URL")?;
     let db = db::Database::open(&db_url).await.context("open database")?;
 
-    let client = login::Client::new(None, None, None, None, Some(&db)).await?;
+    let client = api::Client::new(None, None, None, None, Some(&db)).await?;
     let _ = client.login().await.context("initial login attempt")?;
 
     let mut interval = {

@@ -1,5 +1,5 @@
 use anyhow::Context;
-use fritz_log_parser::{logger, login};
+use fritz_log_parser::{api, logger};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -10,7 +10,7 @@ async fn main() -> anyhow::Result<()> {
         Err(err) => log::warn!("couldn't load .env file: {:?}", err),
     };
 
-    let client = login::Client::new(None, None, None, None, None).await?;
+    let client = api::Client::new(None, None, None, None, None).await?;
     let session = client.login().await.context("initial login attempt")?;
 
     log::info!("session-id: {}", session);

@@ -1,3 +1,5 @@
+//! Exposes a `Client` struct to interact with the API.
+
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -7,8 +9,8 @@ use parking_lot::Mutex;
 use reqwest::tls::Version;
 use reqwest::{Method, RequestBuilder};
 
-use super::{LoginChallenge, SessionId};
-use crate::{api, db, fritz};
+use super::{model, LoginChallenge, SessionId};
+use crate::{db, fritz};
 
 fn elapsed_ms(start: &Instant) -> i64 {
     start.elapsed().as_millis().min(i64::MAX as u128) as i64
@@ -92,7 +94,7 @@ impl Client {
     }
 
     /// Determine path to save responses to from environment variables.
-    pub async fn save_response_path() -> Option<PathBuf> {
+    async fn save_response_path() -> Option<PathBuf> {
         let Ok(save_response) = dotenv::var("FRITZBOX_SAVE_RESPONSE") else {
             return None;
         };
@@ -133,7 +135,7 @@ impl Client {
         }
     }
 
-    pub async fn save_response(&self, name: &str, text: &str) {
+    async fn save_response(&self, name: &str, text: &str) {
         let Some(mut path) = self.save_response_path.as_ref().cloned() else {
             return;
         };
@@ -146,7 +148,7 @@ impl Client {
         }
     }
 
-    pub async fn request_with_inner<F>(
+    async fn request_with_inner<F>(
         &self,
         name: &str,
         url: &str,
@@ -194,7 +196,7 @@ impl Client {
         Ok(text)
     }
 
-    pub async fn request_with<F>(
+    async fn request_with<F>(
         &self,
         name: &str,
         url: &str,
@@ -256,7 +258,7 @@ impl Client {
     }
 
     /// Get the login challenge
-    pub async fn login_challenge(&self) -> anyhow::Result<LoginChallenge> {
+    async fn login_challenge(&self) -> anyhow::Result<LoginChallenge> {
         let url = self.make_url("/login_sid.lua?version=2");
         let text = self
             .request_with("login-challenge", &url, Method::GET, |req| req)
@@ -265,10 +267,7 @@ impl Client {
     }
 
     /// Login by sending the correct response for the given challenge
-    pub async fn login_response(
-        &self,
-        challenge: &LoginChallenge,
-    ) -> anyhow::Result<LoginChallenge> {
+    async fn login_response(&self, challenge: &LoginChallenge) -> anyhow::Result<LoginChallenge> {
         // check for username present in users
         if !challenge.users.iter().any(|user| user == &self.username) {
             anyhow::bail!(
@@ -320,7 +319,7 @@ impl Client {
     }
 
     /// Get the current certificate from the FRITZ!Box.
-    pub async fn box_cert(&self) -> anyhow::Result<String> {
+    pub async fn certificate(&self) -> anyhow::Result<String> {
         let url = self.make_url("/cgi-bin/firmwarecfg");
         let session_id = self.check_or_renew_session_id().await?.to_string();
         let form = reqwest::multipart::Form::new()
@@ -373,7 +372,7 @@ impl Client {
             .request_with("logs", &url, Method::POST, |req| req.form(&form))
             .await?;
 
-        let logs: Vec<api::Log> = serde_json::from_str::<api::Response>(&text)
+        let logs: Vec<model::Log> = serde_json::from_str::<model::Response>(&text)
             .context("parse response json")?
             .data
             .logs;

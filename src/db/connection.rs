@@ -48,7 +48,7 @@ impl Database {
     }
 
     /// Appends a log to the database without checking for consistency
-    pub async fn append_log(&self, log: &fritz::Log) -> anyhow::Result<()> {
+    pub async fn insert_log(&self, log: &fritz::Log) -> anyhow::Result<()> {
         let log = super::Log::from(log.clone());
 
         sqlx::query!(
@@ -79,14 +79,14 @@ impl Database {
     }
 
     /// Append logs to the database without checking for consistency
-    pub async fn append_logs(&self, logs: &[fritz::Log]) -> anyhow::Result<()> {
+    pub async fn insert_logs(&self, logs: &[fritz::Log]) -> anyhow::Result<()> {
         for log in logs {
-            self.append_log(log).await?;
+            self.insert_log(log).await?;
         }
         Ok(())
     }
 
-    pub async fn logs_count(&self) -> anyhow::Result<usize> {
+    pub async fn count_logs(&self) -> anyhow::Result<usize> {
         let count = sqlx::query!(
             r#"
         SELECT count(*) as "count"
@@ -159,7 +159,7 @@ impl Database {
             .next())
     }
 
-    pub async fn replace_log(&self, old: &fritz::Log, new: &fritz::Log) -> anyhow::Result<()> {
+    pub async fn update_log(&self, old: &fritz::Log, new: &fritz::Log) -> anyhow::Result<()> {
         let old_log = super::Log::from(old.clone());
         let new_log = super::Log::from(new.clone());
 
@@ -225,7 +225,7 @@ impl Database {
         // fetch the most recent log in the database to compare against
         let Some(newest_db_log) = self.select_latest_log().await? else {
             // the database is empty, all logs must be new
-            self.append_logs(logs).await?;
+            self.insert_logs(logs).await?;
             return Ok(logs);
         };
 
@@ -246,7 +246,7 @@ impl Database {
         if logs.first().map_or(false, |log| {
             log.earliest_timestamp_utc() > newest_db_log.latest_timestamp_utc()
         }) {
-            self.append_logs(logs).await?;
+            self.insert_logs(logs).await?;
             return Ok(logs);
         }
 
@@ -266,13 +266,13 @@ impl Database {
 
         // if the repetition changed, update it in the database
         if update_most_recent {
-            self.replace_log(&newest_db_log, first_candidate)
+            self.update_log(&newest_db_log, first_candidate)
                 .await
                 .context("update most recent db log")?;
         }
 
         // add all new logs to the database
-        self.append_logs(&candidates[1..])
+        self.insert_logs(&candidates[1..])
             .await
             .context("insert new logs")?;
 

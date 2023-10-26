@@ -5,16 +5,15 @@ use std::str::FromStr;
 use roxmltree::Document;
 use thiserror::Error;
 
-use super::challenge::Challenge;
+use super::challenge;
 use super::xml::{find_node_by_tag, find_text_by_tag};
-use super::{ChallengeParseError, Response};
 
 #[derive(Debug)]
 pub struct LoginChallenge {
     /// `<SID>`
     pub session_id: Option<SessionId>,
     /// `<Challenge>`
-    pub challenge: Challenge,
+    pub challenge: challenge::Challenge,
     /// `<BlockTime>`
     pub block_time: u32,
     /// `<Users>`
@@ -30,7 +29,7 @@ pub enum SessionResponseParseError {
     #[error("couldn't parse session id: {0}")]
     SessionId(#[from] SessionIdParseError),
     #[error("couldn't parse challenge: {0}")]
-    Challenge(#[from] ChallengeParseError),
+    Challenge(#[from] challenge::ChallengeParseError),
     #[error("couldn't parse block time: {0}")]
     BlockTime(#[from] ParseIntError),
     #[error("text is not valid xml: {0}")]
@@ -59,7 +58,7 @@ impl LoginChallenge {
             Ok(id) => Ok(Some(id)),
         }?;
 
-        let challenge = Challenge::from_str(challenge)?;
+        let challenge = challenge::Challenge::from_str(challenge)?;
         let block_time = block_time.parse::<u32>()?;
         let users = users
             .children()
@@ -76,7 +75,7 @@ impl LoginChallenge {
         })
     }
 
-    pub fn make_response(&self, password: &str) -> Response {
+    pub fn make_response(&self, password: &str) -> challenge::Response {
         self.challenge.make_response(password)
     }
 }
@@ -149,14 +148,14 @@ mod tests {
 
         assert_eq!(resp.session_id, None);
 
-        assert_eq!(resp.challenge.static_params.iterations, 60000);
-        assert_eq!(resp.challenge.dynamic_params.iterations, 6000);
+        assert_eq!(resp.challenge.fixed.rounds, 60000);
+        assert_eq!(resp.challenge.dynamic.rounds, 6000);
         assert_eq!(
-            resp.challenge.static_params.salt,
+            resp.challenge.fixed.salt,
             [212, 148, 151, 103, 1, 157, 30, 110, 237, 39, 194, 127, 64, 76, 122, 167]
         );
         assert_eq!(
-            resp.challenge.dynamic_params.salt,
+            resp.challenge.dynamic.salt,
             [79, 52, 21, 163, 181, 57, 106, 150, 117, 208, 137, 6, 238, 106, 105, 51]
         );
 
@@ -199,14 +198,14 @@ mod tests {
             Some([13, 232, 175, 194, 39, 229, 171, 235])
         );
 
-        assert_eq!(resp.challenge.static_params.iterations, 60000);
-        assert_eq!(resp.challenge.dynamic_params.iterations, 6000);
+        assert_eq!(resp.challenge.fixed.rounds, 60000);
+        assert_eq!(resp.challenge.dynamic.rounds, 6000);
         assert_eq!(
-            resp.challenge.static_params.salt,
+            resp.challenge.fixed.salt,
             [212, 148, 151, 103, 1, 157, 30, 110, 237, 39, 194, 127, 64, 76, 122, 167]
         );
         assert_eq!(
-            resp.challenge.dynamic_params.salt,
+            resp.challenge.dynamic.salt,
             [79, 52, 21, 163, 181, 57, 106, 150, 117, 208, 137, 6, 238, 106, 105, 51]
         );
 

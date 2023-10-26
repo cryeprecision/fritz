@@ -1,3 +1,8 @@
+//! Parse the challenge and generate a response for the challenge-response
+//! login scheme used by the FRITZ!Box.
+//!
+//! <https://avm.de/fileadmin/user_upload/Global/Service/Schnittstellen/AVM_Technical_Note_-_Session_ID_deutsch_2021-05-03.pdf>
+
 use std::num::ParseIntError;
 use std::str::{FromStr, Split};
 
@@ -6,22 +11,22 @@ use thiserror::Error;
 
 #[derive(Debug, Default)]
 pub struct Pbkdf2Params {
-    pub iterations: u32,
+    pub rounds: u32,
     pub salt: [u8; 16],
 }
 
 impl Pbkdf2Params {
     pub fn hash(&self, password: &[u8]) -> [u8; 32] {
         let mut out = [0u8; 32];
-        pbkdf2::pbkdf2_hmac::<Sha256>(password, &self.salt, self.iterations, &mut out);
+        pbkdf2::pbkdf2_hmac::<Sha256>(password, &self.salt, self.rounds, &mut out);
         out
     }
 }
 
 #[derive(Debug)]
 pub struct Challenge {
-    pub static_params: Pbkdf2Params,
-    pub dynamic_params: Pbkdf2Params,
+    pub fixed: Pbkdf2Params,
+    pub dynamic: Pbkdf2Params,
 }
 
 #[derive(Debug)]
@@ -77,12 +82,12 @@ impl FromStr for Challenge {
         hex::decode_to_slice(dynamic_salt, &mut dynamic_salt_buf)?;
 
         Ok(Challenge {
-            static_params: Pbkdf2Params {
-                iterations: static_iterations.parse()?,
+            fixed: Pbkdf2Params {
+                rounds: static_iterations.parse()?,
                 salt: static_salt_buf,
             },
-            dynamic_params: Pbkdf2Params {
-                iterations: dynamic_iterations.parse()?,
+            dynamic: Pbkdf2Params {
+                rounds: dynamic_iterations.parse()?,
                 salt: dynamic_salt_buf,
             },
         })
@@ -91,10 +96,10 @@ impl FromStr for Challenge {
 
 impl Challenge {
     pub fn make_response(&self, password: &str) -> Response {
-        let static_hash = self.static_params.hash(password.as_bytes());
-        let dynamic_hash = self.dynamic_params.hash(&static_hash);
+        let static_hash = self.fixed.hash(password.as_bytes());
+        let dynamic_hash = self.dynamic.hash(&static_hash);
         Response {
-            salt: self.dynamic_params.salt,
+            salt: self.dynamic.salt,
             hash: dynamic_hash,
         }
     }
@@ -114,19 +119,19 @@ mod tests {
 
         let ch = Challenge::from_str(CHALLENGE).unwrap();
 
-        assert_eq!(ch.static_params.iterations, 60000);
-        assert_eq!(ch.dynamic_params.iterations, 6000);
+        assert_eq!(ch.fixed.rounds, 60000);
+        assert_eq!(ch.dynamic.rounds, 6000);
 
         assert_eq!(
-            ch.static_params.salt,
+            ch.fixed.salt,
             [212, 148, 151, 103, 1, 157, 30, 110, 237, 39, 194, 127, 64, 76, 122, 167]
         );
         assert_eq!(
-            ch.dynamic_params.salt,
+            ch.dynamic.salt,
             [79, 52, 21, 163, 181, 57, 106, 150, 117, 208, 137, 6, 238, 106, 105, 51]
         );
 
-        let first_hash = ch.static_params.hash(b"vorab9049");
+        let first_hash = ch.fixed.hash(b"vorab9049");
         assert_eq!(
             first_hash,
             [
@@ -135,7 +140,7 @@ mod tests {
             ]
         );
 
-        let second_hash = ch.dynamic_params.hash(&first_hash);
+        let second_hash = ch.dynamic.hash(&first_hash);
         assert_eq!(
             second_hash,
             [

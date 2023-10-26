@@ -5,4 +5,3 @@ pub mod api;
 pub mod db;
 pub mod fritz;
 pub mod logger;
-pub mod login;
