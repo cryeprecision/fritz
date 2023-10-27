@@ -3,33 +3,23 @@
 //!
 //! <https://avm.de/fileadmin/user_upload/Global/Service/Schnittstellen/AVM_Technical_Note_-_Session_ID_deutsch_2021-05-03.pdf>
 
-use std::num::ParseIntError;
-use std::str::{FromStr, Split};
+use std::borrow::Cow;
+use std::str::FromStr;
 
+use anyhow::Context;
+use pbkdf2::pbkdf2_hmac;
+use serde::Deserialize;
 use sha2::Sha256;
-use thiserror::Error;
 
-#[derive(Debug, Default)]
-pub struct Pbkdf2Params {
-    pub rounds: u32,
-    pub salt: [u8; 16],
-}
-
-impl Pbkdf2Params {
-    pub fn hash(&self, password: &[u8]) -> [u8; 32] {
-        let mut out = [0u8; 32];
-        pbkdf2::pbkdf2_hmac::<Sha256>(password, &self.salt, self.rounds, &mut out);
-        out
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Challenge {
-    pub fixed: Pbkdf2Params,
-    pub dynamic: Pbkdf2Params,
+    pub salt_1: [u8; 16],
+    pub rounds_1: u32,
+    pub salt_2: [u8; 16],
+    pub rounds_2: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Response {
     pub salt: [u8; 16],
     pub hash: [u8; 32],
@@ -43,64 +33,75 @@ impl std::fmt::Display for Response {
     }
 }
 
-#[derive(Error, Debug)]
-pub enum ChallengeParseError {
-    #[error("invalid format")]
-    Format,
-    #[error("unsupported version")]
-    Version,
-    #[error("invalid salt: {0}")]
-    Salt(#[from] hex::FromHexError),
-    #[error("couldn't parse iterations: {0}")]
-    Iterations(#[from] ParseIntError),
-}
-type ChallengeParseResult<T> = std::result::Result<T, ChallengeParseError>;
-
 impl FromStr for Challenge {
-    type Err = ChallengeParseError;
+    type Err = anyhow::Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        fn next_split<'a>(s: &mut Split<'a, char>) -> ChallengeParseResult<&'a str> {
-            s.next().ok_or(ChallengeParseError::Format)
+    fn from_str(s: &str) -> anyhow::Result<Challenge> {
+        fn get_splits(s: &str) -> anyhow::Result<[&str; 5]> {
+            let mut iter = s.split('$');
+            Ok([
+                iter.next().context("get version part")?,
+                iter.next().context("get rounds_1 part")?,
+                iter.next().context("get salt_1 part")?,
+                iter.next().context("get rounds_2 part")?,
+                iter.next().context("get salt_2 part")?,
+            ])
         }
 
-        let mut splits = s.split('$');
-        let version = next_split(&mut splits)?;
-        let static_iterations = next_split(&mut splits)?;
-        let static_salt = next_split(&mut splits)?;
-        let dynamic_iterations = next_split(&mut splits)?;
-        let dynamic_salt = next_split(&mut splits)?;
+        let [version, rounds_1, salt_1, rounds_2, salt_2] = get_splits(s)?;
 
         if version != "2" {
-            return Err(ChallengeParseError::Version);
+            return Err(anyhow::anyhow!("invalid version"));
         }
 
-        let mut static_salt_buf = [0u8; 16];
-        hex::decode_to_slice(static_salt, &mut static_salt_buf)?;
+        let rounds_1 = rounds_1.parse().context("parse rounds_1")?;
+        let rounds_2 = rounds_2.parse().context("parse rounds_2")?;
 
-        let mut dynamic_salt_buf = [0u8; 16];
-        hex::decode_to_slice(dynamic_salt, &mut dynamic_salt_buf)?;
+        let mut salt_1_buf = [0u8; 16];
+        hex::decode_to_slice(salt_1, &mut salt_1_buf)?;
+
+        let mut salt_2_buf = [0u8; 16];
+        hex::decode_to_slice(salt_2, &mut salt_2_buf)?;
 
         Ok(Challenge {
-            fixed: Pbkdf2Params {
-                rounds: static_iterations.parse()?,
-                salt: static_salt_buf,
-            },
-            dynamic: Pbkdf2Params {
-                rounds: dynamic_iterations.parse()?,
-                salt: dynamic_salt_buf,
-            },
+            salt_1: salt_1_buf,
+            rounds_1,
+            salt_2: salt_2_buf,
+            rounds_2,
         })
+    }
+}
+impl<'de> Deserialize<'de> for Challenge {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let challenge = Cow::<'de, str>::deserialize(deserializer)?;
+        challenge.parse().map_err(serde::de::Error::custom)
     }
 }
 
 impl Challenge {
     pub fn make_response(&self, password: &str) -> Response {
-        let static_hash = self.fixed.hash(password.as_bytes());
-        let dynamic_hash = self.dynamic.hash(&static_hash);
+        let mut hash_1_buf = [0u8; 32];
+        pbkdf2_hmac::<Sha256>(
+            password.as_bytes(),
+            &self.salt_1,
+            self.rounds_1,
+            &mut hash_1_buf,
+        );
+
+        let mut hash_2_buf = [0u8; 32];
+        pbkdf2_hmac::<Sha256>(
+            hash_1_buf.as_slice(),
+            &self.salt_2,
+            self.rounds_2,
+            &mut hash_2_buf,
+        );
+
         Response {
-            salt: self.dynamic.salt,
-            hash: dynamic_hash,
+            salt: self.salt_2,
+            hash: hash_2_buf,
         }
     }
 }
@@ -119,51 +120,19 @@ mod tests {
 
         let ch = Challenge::from_str(CHALLENGE).unwrap();
 
-        assert_eq!(ch.fixed.rounds, 60000);
-        assert_eq!(ch.dynamic.rounds, 6000);
+        assert_eq!(ch.rounds_1, 60000);
+        assert_eq!(ch.rounds_2, 6000);
 
         assert_eq!(
-            ch.fixed.salt,
+            ch.salt_1,
             [212, 148, 151, 103, 1, 157, 30, 110, 237, 39, 194, 127, 64, 76, 122, 167]
         );
         assert_eq!(
-            ch.dynamic.salt,
+            ch.salt_2,
             [79, 52, 21, 163, 181, 57, 106, 150, 117, 208, 137, 6, 238, 106, 105, 51]
-        );
-
-        let first_hash = ch.fixed.hash(b"vorab9049");
-        assert_eq!(
-            first_hash,
-            [
-                173, 73, 26, 0, 69, 3, 2, 226, 26, 14, 168, 166, 149, 148, 120, 114, 4, 167, 182,
-                35, 234, 201, 114, 174, 21, 114, 197, 66, 252, 236, 254, 29
-            ]
-        );
-
-        let second_hash = ch.dynamic.hash(&first_hash);
-        assert_eq!(
-            second_hash,
-            [
-                22, 164, 161, 25, 135, 216, 2, 198, 243, 230, 125, 145, 209, 66, 91, 90, 14, 173,
-                231, 133, 97, 165, 129, 14, 249, 5, 55, 42, 177, 218, 83, 202
-            ]
         );
 
         let response = ch.make_response("vorab9049");
         assert_eq!(response.to_string(), RESPONSE);
-    }
-
-    #[test]
-    fn get_response() {
-        const CHALLENGE: &str =
-            "2$60000$d4949767019d1e6eed27c27f404c7aa7$6000$662dc618ec19bc5012b272f53b805c01";
-        const PASSWORD: &str = "vorab9049";
-
-        println!(
-            "{:#?}",
-            Challenge::from_str(CHALLENGE)
-                .unwrap()
-                .make_response(PASSWORD)
-        );
     }
 }

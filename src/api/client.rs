@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use reqwest::tls::Version;
 use reqwest::{Method, RequestBuilder};
 
-use super::{model, LoginChallenge, SessionId};
+use super::{model, SessionId, SessionInfo};
 use crate::{db, fritz};
 
 fn elapsed_ms(start: &Instant) -> i64 {
@@ -34,6 +34,10 @@ pub struct Client {
 }
 
 impl Client {
+    /// Create a new client to interact with the FRITZ!Box API.
+    ///
+    /// Parameters that are `None` will be with their environment variables
+    /// counterpart.
     pub async fn new(
         domain: Option<&str>,
         username: Option<&str>,
@@ -249,33 +253,39 @@ impl Client {
                 req.form(&form)
             })
             .await?;
+        let resp_session_id = SessionInfo::from_xml(&text)?.session_id;
 
-        let challenge =
-            LoginChallenge::from_xml_text(&text).context("couldn't parse response xml")?;
-        Ok(challenge
-            .session_id
-            .and_then(|id| if id == session_id { Some(id) } else { None }))
+        Ok(
+            if !resp_session_id.is_valid() || resp_session_id != session_id {
+                None
+            } else {
+                Some(resp_session_id)
+            },
+        )
     }
 
     /// Get the login challenge
-    async fn login_challenge(&self) -> anyhow::Result<LoginChallenge> {
+    async fn login_challenge(&self) -> anyhow::Result<SessionInfo> {
         let url = self.make_url("/login_sid.lua?version=2");
+
         let text = self
             .request_with("login-challenge", &url, Method::GET, |req| req)
             .await?;
-        Ok(LoginChallenge::from_xml_text(&text)?)
+
+        SessionInfo::from_xml(&text)
     }
 
     /// Login by sending the correct response for the given challenge
-    async fn login_response(&self, challenge: &LoginChallenge) -> anyhow::Result<LoginChallenge> {
+    async fn login_response(&self, challenge: &SessionInfo) -> anyhow::Result<SessionInfo> {
         // check for username present in users
-        if !challenge.users.iter().any(|user| user == &self.username) {
+        if !challenge.has_user(&self.username) {
             anyhow::bail!(
                 "trying to login with invalid user ({} not in {:?})",
                 self.username,
                 challenge.users
             )
         }
+
         let response = challenge.make_response(&self.password).to_string();
         let url = self.make_url("/login_sid.lua?version=2");
         let form: [(&str, &str); 2] = [("username", &self.username), ("response", &response)];
@@ -284,7 +294,7 @@ impl Client {
             .request_with("login-response", &url, Method::POST, |req| req.form(&form))
             .await?;
 
-        Ok(LoginChallenge::from_xml_text(&text)?)
+        SessionInfo::from_xml(&text)
     }
 
     /// Create a new session, doesn't check for an existing one.
@@ -293,11 +303,16 @@ impl Client {
         let login_challenge = self.login_challenge().await?;
         // respond with the correct response
         let response = self.login_response(&login_challenge).await?;
-        // get the session id
-        let session_id = response.session_id.context("missing session id")?;
+        // check returned session id
+        if !response.session_id.is_valid() {
+            return Err(anyhow::anyhow!(
+                "invalid session id after login ({})",
+                response.session_id
+            ));
+        }
 
-        *self.session_id.lock() = Some(session_id);
-        Ok(session_id)
+        *self.session_id.lock() = Some(response.session_id);
+        Ok(response.session_id)
     }
 
     /// Destroy the current session if there is one.
