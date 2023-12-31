@@ -1,8 +1,10 @@
+mod logger;
+
 use std::time::Duration;
 
 use anyhow::Context;
 use chrono::Local;
-use fritz_log_parser::{api, db, logger};
+use fritz_api::{api, db};
 use tokio::time::MissedTickBehavior;
 
 #[tokio::main(flavor = "current_thread")]

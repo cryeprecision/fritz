@@ -1,33 +1,10 @@
-[package]
-name = "fritz-log-parser"
-version = "0.1.0"
-authors = ["cryeprecision <cryeprecision@discord>"]
-description = "Save FRITZ!Box logs in a SQLite database"
-edition = "2021"
-keywords = ["fritz", "fritzbox", "fritz!box"]
+[workspace]
 
-[dependencies]
-anyhow = { version = "1" } # easy error handling and propagation
-chrono = { version = "0", features = ["serde"] } # date and time features
-log = { version = "0", features = ["release_max_level_info"] } # logging facade
-reqwest = { version = "0", default-features = false, features = ["rustls-tls", "multipart", "json"] } # http requests
-serde = { version = "1", features = ["derive"] } # serde yes
-tokio = { version = "1", features = ["rt", "macros", "fs", "process", "signal"] } # async runtime
-
-hex = { version = "0" } # fritzbox authentication
-lazy-regex = { version = "2" } # easy regex
-quick-xml = { version = "0", features = ["serialize"] } # xml parsing with serde
-serde_json = { version = "1" } # json data model implementation
-
-dotenv = { version = "0" } # load .env files
-parking_lot = { version = "0" } # better sync interface
-pbkdf2 = { version = "0" } # fritzbox authentication
-sha2 = { version = "0" } # fritzbox authentication
-simplelog = { version = "0" } # logging impl
-
-# https://github.com/launchbadge/sqlx/issues/191#issuecomment-649464197
-sqlx = { version = "0", features = ["sqlite", "runtime-tokio"] } # sqlite and stuff
-libsqlite3-sys = { version = "*", features = ["bundled"] } # force sqlx to use bundled feature
+resolver = "2"
+members = [
+    "fritz-app",
+    "fritz-api",
+]
 
 [profile.release]
 strip = true

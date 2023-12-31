@@ -1,0 +1,30 @@
+name: fritz
+services:
+  fritz_db:
+    image: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DATABASE}
+    volumes:
+      - fritz_db:/var/lib/postgresql/data/
+    ports:
+      - "5432:5432"
+
+  fritz_api:
+    image: registry.debian.home.arpa/fritz-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      STEAM_API_KEY: ${STEAM_API_KEY}
+      COOKIE_KEY_BASE64: ${COOKIE_KEY_BASE64}
+      POSTGRES_HOST: complainer_db:5432
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DATABASE: ${POSTGRES_DATABASE}
+      OPENID_REALM: http://127.0.0.1:5173
+      OPENID_RETURN_TO: ${OPENID_RETURN_TO}
+      OPENID_SUCCESS_REDIRECT: ${OPENID_SUCCESS_REDIRECT}
+      OPENID_LOGOUT_REDIRECT: ${OPENID_LOGOUT_REDIRECT}

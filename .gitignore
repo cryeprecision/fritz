@@ -1,8 +1,1 @@
-/.vscode/
-/data/certificates/
-/data/database/
-/data/database-live/
-/data/examples/
-/data/responses/
-/target/
-/.env
+/target

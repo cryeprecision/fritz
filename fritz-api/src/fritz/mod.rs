@@ -6,6 +6,8 @@ use crate::api;
 use crate::db::util::{local_to_utc_timestamp, utc_timestamp_to_local};
 use crate::db::{self};
 
+/// If a message was logged multiple times, this struct contains
+/// the date at which it was *first* logged and the number of times it was logged.
 #[derive(Debug, Clone, Serialize, Hash, PartialEq, Eq)]
 pub struct Repetition {
     pub datetime: DateTime<Local>,
@@ -14,6 +16,9 @@ pub struct Repetition {
 
 #[derive(Debug, Clone, Serialize, Hash, PartialEq, Eq)]
 pub struct Log {
+    /// Timestamp at which this log entry was last updated.
+    ///
+    /// If a [`Repetition`] is added or updated, that counts as an update.
     pub datetime: DateTime<Local>,
     pub message: String,
     pub message_id: i64,

@@ -32,7 +32,7 @@ impl Database {
     }
 
     async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::migrate!("./data/migrations/")
+        sqlx::migrate!("./migrations/")
             .run(pool)
             .await
             .context("migrate database")?;
@@ -216,8 +216,14 @@ impl Database {
         // [1,2]   ->     [3,2,1]: All logs are old
         // [2,3,4] ->   [4,3,2,1]: Some logs are new
 
-        // make sure the logs are sorted from old to new
-        if !logs.windows(2).all(|w| w[0].datetime <= w[1].datetime) {
+        // for some reason, the FRITZ!Box premium software updates the repetition of a existing
+        // log entry after inserting a new log entry which shouldn't happen... because of that
+        // we need to compare the earliest timestamp of the earlier log entry with the latest
+        // timestamp of the following entry.
+        if !logs
+            .windows(2)
+            .all(|w| w[0].earliest_timestamp_utc() <= w[1].latest_timestamp_utc())
+        {
             log::warn!("called append_new_logs with unsorted logs: {:#?}", logs);
             return Err(anyhow::anyhow!("logs must be sorted from old to new"));
         }
