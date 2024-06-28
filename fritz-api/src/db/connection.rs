@@ -264,7 +264,13 @@ impl Database {
                     && log.message_id == newest_db_log.message_id
                     && log.category_id == newest_db_log.category_id
             })
-            .context("couldn't find most recent db log in logs argument")?;
+            .with_context(|| {
+                format!(
+                    "couldn't find most recent db log in logs argument \
+                        (newest_db_log: {:#?}, new_logs: {:#?})",
+                    newest_db_log, logs
+                )
+            })?;
 
         let candidates = logs.split_at(most_recent_index).1;
         let first_candidate = candidates.first().expect("at least one candidate");

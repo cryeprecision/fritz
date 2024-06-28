@@ -49,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
                     break logs;
                 }
                 Err(err) => {
-                    log::warn!("couldn't fetch logs: {}", err);
+                    log::warn!("couldn't fetch logs: {:?}", err);
                     continue;
                 }
             }
@@ -70,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
             })
             .await
         {
-            log::warn!("couldn't insert update metadata into db: {}", err);
+            log::warn!("couldn't insert update metadata into db: {:?}", err);
         }
 
         log::info!("upserted {} logs", upserted);

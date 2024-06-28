@@ -1,0 +1,11 @@
+/.vscode/
+/.git/
+/.dockerignore
+/.env
+/.gitignore
+/target/
+/fritz-
+
+/docker-compose.yml
+/Dockerfile
+/README.md

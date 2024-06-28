@@ -6,10 +6,6 @@ members = [
     "fritz-api",
 ]
 
-[profile.release]
-strip = true
-panic = "abort"
-
 # https://github.com/launchbadge/sqlx/tree/main#compile-time-verification
 [profile.dev.package.sqlx-macros]
 opt-level = 3
