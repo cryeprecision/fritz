@@ -1,15 +1,12 @@
-mod logger;
-
 use std::time::Duration;
 
 use anyhow::Context;
 use chrono::Local;
-use fritz_api::{api, db};
 use tokio::time::MissedTickBehavior;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
-    logger::init().context("initialize logger")?;
+    fritz_app::log::init().context("initialize logger")?;
 
     match dotenv::dotenv() {
         Ok(path) => log::info!("loaded .env from {}", path.to_str().expect("utf-8")),
@@ -17,9 +14,11 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let db_url = std::env::var("DATABASE_URL").context("load DATABASE_URL")?;
-    let db = db::Database::open(&db_url).await.context("open database")?;
+    let db = fritz_app::db::Database::open(&db_url)
+        .await
+        .context("open database")?;
 
-    let client = api::Client::new(None, None, None, None, Some(&db)).await?;
+    let client = fritz_app::api::Client::new(None, None, None, None, Some(&db)).await?;
     let _ = client.login().await.context("initial login attempt")?;
 
     let mut interval = {
@@ -63,9 +62,9 @@ async fn main() -> anyhow::Result<()> {
             .len();
 
         if let Err(err) = db
-            .insert_update(&db::Update {
+            .insert_update(&fritz_app::db::Update {
                 id: None,
-                datetime: db::util::local_to_utc_timestamp(Local::now()),
+                datetime: fritz_app::db::util::local_to_utc_timestamp(Local::now()),
                 upserted_rows: upserted.min(i64::MAX as usize) as i64,
             })
             .await

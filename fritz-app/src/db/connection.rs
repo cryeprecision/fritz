@@ -35,16 +35,15 @@ impl Database {
         sqlx::migrate!("./migrations/")
             .run(pool)
             .await
-            .context("migrate database")?;
-        Ok(())
+            .context("migrate database")
     }
 
     pub async fn clear_logs(&self) -> anyhow::Result<()> {
         sqlx::query!(r#"DELETE FROM "logs""#)
             .execute(&self.pool)
             .await
-            .context("clear logs")?;
-        Ok(())
+            .context("clear logs")
+            .map(|_| ())
     }
 
     /// Appends a log to the database without checking for consistency
@@ -73,9 +72,8 @@ impl Database {
         )
         .execute(&self.pool)
         .await
-        .context("insert log")?;
-
-        Ok(())
+        .context("insert log")
+        .map(|_| ())
     }
 
     /// Append logs to the database without checking for consistency

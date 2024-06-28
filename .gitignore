@@ -2,8 +2,5 @@
 **/*.db3
 **/*.sqlite3
 
-/fritz-api/examples/
-/fritz-app/data/
-/target/
 /docker-compose.yml
 /Dockerfile

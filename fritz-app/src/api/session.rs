@@ -108,6 +108,7 @@ mod de {
             Some(_) => false,
         })
     }
+    #[allow(dead_code)]
     pub fn deserialize_session_id_opt<'de, D>(
         deserializer: D,
     ) -> Result<Option<SessionId>, D::Error>
@@ -124,17 +125,6 @@ mod de {
 #[cfg(test)]
 mod tests {
     use super::{SessionInfo, User};
-
-    const XML: &str = r#"
-<SessionInfo>
-    <SID>0de8afc227e5abeb</SID>
-    <Challenge>2$60000$d4949767019d1e6eed27c27f404c7aa7$6000$4f3415a3b5396a9675d08906ee6a6933</Challenge>
-    <BlockTime>32</BlockTime>
-    <Users>
-        <User last="1">fritz3713</User>
-    </Users>
-</SessionInfo>
-    "#;
 
     #[test]
     fn parse_xml_error() {

@@ -1,13 +1,12 @@
 use anyhow::Context;
 use chrono::{Local, TimeZone};
-use fritz_log_parser::{db, fritz, logger};
 
 macro_rules! repetition {
     () => {
         None
     };
     ([$hour:literal, $minute:literal, $second:literal], $count:literal) => {
-        Some(::fritz_log_parser::fritz::Repetition {
+        Some(crate::fritz::Repetition {
             datetime: Local
                 .with_ymd_and_hms(2023, 1, 1, $hour, $minute, $second)
                 .single()
@@ -19,7 +18,7 @@ macro_rules! repetition {
 
 macro_rules! log {
     ([$hour:literal, $minute:literal, $second:literal], $message_id:literal, $category_id:literal, $($repetition:tt)+) => {
-        ::fritz_log_parser::fritz::Log {
+        crate::fritz::Log {
             datetime: Local
                 .with_ymd_and_hms(2023, 1, 1, $hour, $minute, $second)
                 .single()
@@ -33,9 +32,9 @@ macro_rules! log {
 }
 
 async fn insert_logs_single(
-    db: &db::Database,
-    logs: &[fritz::Log],
-) -> anyhow::Result<Vec<fritz::Log>> {
+    db: &crate::db::Database,
+    logs: &[crate::fritz::Log],
+) -> anyhow::Result<Vec<crate::fritz::Log>> {
     for i in 0..logs.len() {
         let _ = db
             .append_new_logs(&logs[i..i + 1])
@@ -45,14 +44,14 @@ async fn insert_logs_single(
     db.select_latest_logs(0, 500).await
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> anyhow::Result<()> {
-    logger::init().context("initialize logger")?;
+#[tokio::test(flavor = "current_thread")]
+async fn insert_new() -> anyhow::Result<()> {
+    crate::log::init().context("initialize logger")?;
     let path = dotenv::dotenv().context("load .env file")?;
     log::info!("loaded .env from {}", path.to_str().expect("utf-8"));
 
     // let db_url = std::env::var("DATABASE_URL").unwrap_or("sqlite://logs.db3".to_string());
-    let db = db::Database::open_in_memory()
+    let db = crate::db::Database::open_in_memory()
         .await
         .context("open database")?;
 

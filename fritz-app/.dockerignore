@@ -1,0 +1,15 @@
+**/*.sqlite3
+**/*.db3
+**/*.env
+
+/.vscode/
+/.git/
+/fritz-app/examples/
+/fritz-app/data/
+/target/
+
+/.dockerignore
+/.gitignore
+/docker-compose.yml
+/Dockerfile
+/README.md
