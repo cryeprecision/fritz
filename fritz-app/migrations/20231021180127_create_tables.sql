@@ -1,12 +1,12 @@
 -- Add migration script here
 CREATE TABLE IF NOT EXISTS "logs"
 (
-    "id"                  INTEGER PRIMARY KEY,
-    "datetime"            INTEGER NOT NULL,
-    "message"             TEXT    NOT NULL,
-    "message_id"          INTEGER NOT NULL,
-    "category_id"         INTEGER NOT NULL,
-    "repetition_datetime" INTEGER NULL,
-    "repetition_count"    INTEGER NULL,
-    UNIQUE(datetime, message_id, category_id)
+    "id"                  BIGSERIAL   PRIMARY KEY,
+    "datetime"            TIMESTAMPTZ NOT NULL,
+    "message"             TEXT        NOT NULL,
+    "message_id"          BIGINT      NOT NULL,
+    "category_id"         BIGINT      NOT NULL,
+    "repetition_datetime" TIMESTAMPTZ NULL,
+    "repetition_count"    BIGINT      NULL,
+    UNIQUE("datetime", "message_id", "category_id")
 );

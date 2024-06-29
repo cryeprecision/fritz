@@ -2,5 +2,6 @@
 **/*.db3
 **/*.sqlite3
 
+/postgres_data/
 /docker-compose.yml
 /Dockerfile

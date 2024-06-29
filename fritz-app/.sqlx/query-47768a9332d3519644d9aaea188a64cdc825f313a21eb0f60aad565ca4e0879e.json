@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE \"logs\"\n        SET \"datetime\"            = $1,\n            \"message\"             = $2,\n            \"message_id\"          = $3,\n            \"category_id\"         = $4,\n            \"repetition_datetime\" = $5,\n            \"repetition_count\"    = $6\n        WHERE \"datetime\"    = $7 AND\n              \"message_id\"  = $8 AND\n              \"category_id\" = $9\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text",
+        "Int8",
+        "Int8",
+        "Timestamptz",
+        "Int8",
+        "Timestamptz",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "47768a9332d3519644d9aaea188a64cdc825f313a21eb0f60aad565ca4e0879e"
+}

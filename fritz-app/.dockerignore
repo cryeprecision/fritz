@@ -4,8 +4,8 @@
 
 /.vscode/
 /.git/
-/fritz-app/examples/
-/fritz-app/data/
+/examples/
+/data/
 /target/
 
 /.dockerignore

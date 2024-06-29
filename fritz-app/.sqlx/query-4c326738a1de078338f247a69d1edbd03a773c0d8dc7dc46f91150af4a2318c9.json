@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO \"requests\"\n        (\n            \"datetime\",\n            \"name\",\n            \"url\",\n            \"method\",\n            \"duration_ms\",\n            \"response_code\",\n            \"session_id\"\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Text",
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4c326738a1de078338f247a69d1edbd03a773c0d8dc7dc46f91150af4a2318c9"
+}

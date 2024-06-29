@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT \"id\",\n               \"datetime\",\n               \"message\",\n               \"message_id\",\n               \"category_id\",\n               \"repetition_datetime\",\n               \"repetition_count\"\n        FROM \"logs\"\n        ORDER BY \"id\" DESC\n        LIMIT $1\n        OFFSET $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "datetime",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "message",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "message_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "category_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "repetition_datetime",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "repetition_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "0c8fd18742123f67b4ce437736a1c12c8b35a40b6c24bb2c44e46ebc73c0442e"
+}

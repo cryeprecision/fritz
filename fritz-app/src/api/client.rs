@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use anyhow::Context;
-use chrono::Local;
+use chrono::{Local, Utc};
 use parking_lot::Mutex;
 use reqwest::tls::Version;
 use reqwest::{Method, RequestBuilder};
@@ -46,19 +46,25 @@ impl Client {
         pool: Option<&db::Database>,
     ) -> anyhow::Result<Client> {
         fn resolve_var(key: &str, default: Option<&str>) -> anyhow::Result<String> {
-            default.map(|s| Ok(s.to_string())).unwrap_or_else(|| {
-                dotenv::var(key).with_context(|| format!("couldn't find env var {}", key))
-            })
+            match default {
+                None => dotenv::var(key).with_context(|| format!("couldn't find env var {}", key)),
+                Some(s) => Ok(s.to_string()),
+            }
         }
 
         fn resolve_root_cert(
             key: &str,
             default: Option<&[u8]>,
         ) -> anyhow::Result<reqwest::Certificate> {
-            let bytes = default.map(|b| Ok(b.to_vec())).unwrap_or_else(|| {
-                let path = dotenv::var(key).unwrap_or("./cert.pem".to_string());
-                std::fs::read(&path).with_context(|| format!("couldn't find root cert at {}", path))
-            })?;
+            let bytes = match default {
+                None => {
+                    let path = dotenv::var(key)
+                        .with_context(|| format!("couldn't find env var {}", key))?;
+                    std::fs::read(&path)
+                        .with_context(|| format!("couldn't find root cert at {}", path))
+                }
+                Some(b) => Ok(b.to_vec()),
+            }?;
             reqwest::Certificate::from_pem(&bytes).context("certificate is invalid")
         }
 
@@ -163,7 +169,7 @@ impl Client {
     where
         F: FnOnce(RequestBuilder) -> RequestBuilder,
     {
-        meta.datetime = db::util::local_to_utc_timestamp(Local::now());
+        meta.datetime = Utc::now();
         meta.name = name.to_string();
         meta.url = url.to_string();
         meta.method = method.to_string();
@@ -173,7 +179,7 @@ impl Client {
         builder = func(builder);
 
         let resp = builder.send().await.context("send request")?;
-        meta.response_code = Some(i64::from(resp.status().as_u16()));
+        meta.response_code = Some(resp.status().as_u16().into());
 
         if let Err(err) = resp.error_for_status_ref() {
             meta.duration_ms = elapsed_ms(&now);

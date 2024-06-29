@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO \"updates\"\n        (\n            \"datetime\",\n            \"upserted_rows\"\n        )\n        VALUES ($1, $2)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6da1d687dfe56d18b790f65b8888bb156931bb24583dda3c014127dd61705949"
+}

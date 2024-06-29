@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO \"logs\"\n        (\n            \"datetime\",\n            \"message\",\n            \"message_id\",\n            \"category_id\",\n            \"repetition_datetime\",\n            \"repetition_count\"\n        )\n        VALUES ($1, $2, $3, $4, $5, $6)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Text",
+        "Int8",
+        "Int8",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "99265d14cc8ebd2460380bc05dbc7dd800e63c0ef3859800ff19bd4de1eeaed3"
+}

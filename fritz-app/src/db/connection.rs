@@ -1,27 +1,21 @@
 use anyhow::Context;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 use super::model::{Request, Update};
-use crate::fritz;
+use crate::{db, fritz};
 
 #[derive(Clone)]
 pub struct Database {
-    pool: SqlitePool,
+    pool: PgPool,
 }
 
 impl Database {
+    #[allow(clippy::unused_async)]
     pub async fn open_in_memory() -> anyhow::Result<Database> {
-        let pool = SqlitePool::connect("sqlite::memory:")
-            .await
-            .context("open sqlite in memory")?;
-        Self::migrate(&pool).await?;
-
-        Ok(Database { pool })
+        unimplemented!("open_in_memory is not supported for postgres")
     }
     pub async fn open(url: &str) -> anyhow::Result<Database> {
-        let pool = SqlitePool::connect(url)
-            .await
-            .context("connect to sqlite")?;
+        let pool = PgPool::connect(url).await.context("connect to sqlite")?;
         Self::migrate(&pool).await?;
 
         Ok(Database { pool })
@@ -31,7 +25,7 @@ impl Database {
         self.pool.close().await;
     }
 
-    async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
+    async fn migrate(pool: &PgPool) -> anyhow::Result<()> {
         sqlx::migrate!("./migrations/")
             .run(pool)
             .await
@@ -61,7 +55,7 @@ impl Database {
             "repetition_datetime",
             "repetition_count"
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        VALUES ($1, $2, $3, $4, $5, $6)
             "#,
             /* 1 */ log.datetime,
             /* 2 */ log.message,
@@ -94,7 +88,8 @@ impl Database {
         .fetch_one(&self.pool)
         .await
         .context("fetch row count")?
-        .count;
+        .count
+        .context("missing row count")?;
 
         usize::try_from(count).context("negative row count")
     }
@@ -110,7 +105,8 @@ impl Database {
         .fetch_one(&self.pool)
         .await
         .context("check database empty")?
-        .count;
+        .count
+        .context("missing row count")?;
 
         Ok(count == 0)
     }
@@ -124,7 +120,7 @@ impl Database {
         let offset = i64::try_from(offset).context("cast offset as i64")?;
         let limit = i64::try_from(limit).context("cast limit as i64")?;
         sqlx::query_as!(
-            super::Log,
+            db::Log,
             r#"
         SELECT "id",
                "datetime",
@@ -135,10 +131,11 @@ impl Database {
                "repetition_count"
         FROM "logs"
         ORDER BY "id" DESC
-        LIMIT ?1, ?2
+        LIMIT $1
+        OFFSET $2
             "#,
-            /* 1 */ offset,
-            /* 2 */ limit,
+            /* 1 */ limit,
+            /* 2 */ offset,
         )
         .fetch_all(&self.pool)
         .await
@@ -164,15 +161,15 @@ impl Database {
         let rows_affected = sqlx::query!(
             r#"
         UPDATE "logs"
-        SET "datetime"            = ?1,
-            "message"             = ?2,
-            "message_id"          = ?3,
-            "category_id"         = ?4,
-            "repetition_datetime" = ?5,
-            "repetition_count"    = ?6
-        WHERE "datetime"    = ?7 AND
-              "message_id"  = ?8 AND
-              "category_id" = ?9
+        SET "datetime"            = $1,
+            "message"             = $2,
+            "message_id"          = $3,
+            "category_id"         = $4,
+            "repetition_datetime" = $5,
+            "repetition_count"    = $6
+        WHERE "datetime"    = $7 AND
+              "message_id"  = $8 AND
+              "category_id" = $9
             "#,
             /* 1 */ new_log.datetime,
             /* 2 */ new_log.message,
@@ -307,7 +304,7 @@ impl Database {
             "response_code",
             "session_id"
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
             "#,
             /* 1 */ req.datetime,
             /* 2 */ req.name,
@@ -332,7 +329,7 @@ impl Database {
             "datetime",
             "upserted_rows"
         )
-        VALUES (?1, ?2)
+        VALUES ($1, $2)
             "#,
             /* 1 */ update.datetime,
             /* 2 */ update.upserted_rows,
@@ -340,6 +337,32 @@ impl Database {
         .execute(&self.pool)
         .await
         .context("insert update")?;
+
+        Ok(())
+    }
+
+    pub async fn insert_ping(&self, ping: &db::Ping) -> anyhow::Result<()> {
+        sqlx::query!(
+            r#"
+        INSERT INTO "ping"
+        (
+            "datetime",
+            "target",
+            "duration_ms",
+            "ttl",
+            "bytes"
+        )
+        VALUES ($1, $2, $3, $4, $5)
+            "#,
+            /* 1 */ ping.datetime,
+            /* 2 */ ping.target,
+            /* 3 */ ping.duration_ms,
+            /* 4 */ ping.ttl,
+            /* 5 */ ping.bytes,
+        )
+        .execute(&self.pool)
+        .await
+        .context("insert ping")?;
 
         Ok(())
     }

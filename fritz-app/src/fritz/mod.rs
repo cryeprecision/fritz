@@ -3,7 +3,7 @@ use chrono::{DateTime, Local};
 use serde::Serialize;
 
 use crate::api;
-use crate::db::util::{local_to_utc_timestamp, utc_timestamp_to_local};
+use crate::db::util::local_to_utc_timestamp;
 use crate::db::{self};
 
 /// If a message was logged multiple times, this struct contains
@@ -28,11 +28,10 @@ pub struct Log {
 
 impl Log {
     pub fn earliest_timestamp_utc(&self) -> i64 {
-        self.repetition
-            .as_ref()
-            .map_or(local_to_utc_timestamp(self.datetime), |rep| {
-                local_to_utc_timestamp(rep.datetime)
-            })
+        match &self.repetition {
+            Some(rep) => local_to_utc_timestamp(rep.datetime),
+            None => local_to_utc_timestamp(self.datetime),
+        }
     }
     pub fn latest_timestamp_utc(&self) -> i64 {
         local_to_utc_timestamp(self.datetime)
@@ -56,19 +55,17 @@ impl std::fmt::Display for Log {
 impl From<Log> for db::Log {
     fn from(value: Log) -> Self {
         let (datetime, count) = match value.repetition {
-            Some(Repetition { datetime, count }) => {
-                (Some(local_to_utc_timestamp(datetime)), Some(count))
-            }
+            Some(Repetition { datetime, count }) => (Some(datetime), Some(count)),
             None => (None, None),
         };
 
         db::Log {
             id: None,
-            datetime: local_to_utc_timestamp(value.datetime),
+            datetime: value.datetime.into(),
             message: value.message,
             message_id: value.message_id,
             category_id: value.category_id,
-            repetition_datetime: datetime,
+            repetition_datetime: datetime.map(|datetime| datetime.into()),
             repetition_count: count,
         }
     }
@@ -79,11 +76,16 @@ impl TryFrom<db::Log> for Log {
     /// Convert logs from the database format into a common format
     fn try_from(value: db::Log) -> Result<Self, Self::Error> {
         Ok(Log {
-            datetime: utc_timestamp_to_local(value.datetime)?,
+            datetime: value.datetime.into(),
             message: value.message,
             message_id: value.message_id,
             category_id: value.category_id,
-            repetition: util::parse_repetition(value.repetition_datetime, value.repetition_count)?,
+            repetition: util::parse_repetition(
+                value
+                    .repetition_datetime
+                    .map(|repetition_datetime| repetition_datetime.into()),
+                value.repetition_count,
+            )?,
         })
     }
 }
@@ -136,7 +138,6 @@ mod util {
     use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime};
 
     use super::Repetition;
-    use crate::db::util::utc_timestamp_to_local;
 
     /// DateTimes from the API are in the local timezone
     pub fn parse_datetime(date: &str, time: &str) -> anyhow::Result<DateTime<Local>> {
@@ -149,14 +150,11 @@ mod util {
     }
 
     pub fn parse_repetition(
-        datetime: Option<i64>,
+        datetime: Option<DateTime<Local>>,
         count: Option<i64>,
     ) -> anyhow::Result<Option<Repetition>> {
         match (datetime, count) {
-            (Some(datetime), Some(count)) => {
-                let datetime = utc_timestamp_to_local(datetime)?;
-                Ok(Some(Repetition { datetime, count }))
-            }
+            (Some(datetime), Some(count)) => Ok(Some(Repetition { datetime, count })),
             (None, None) => Ok(None),
             // Either both are set or none
             v => Err(anyhow::anyhow!("invalid repetition {:?}", v)),

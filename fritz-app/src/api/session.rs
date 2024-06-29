@@ -103,9 +103,8 @@ mod de {
         D: Deserializer<'de>,
     {
         Ok(match <Option<u8>>::deserialize(deserializer)? {
-            None => false,
             Some(1) => true,
-            Some(_) => false,
+            Some(_) | None => false,
         })
     }
     #[allow(dead_code)]

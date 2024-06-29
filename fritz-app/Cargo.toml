@@ -9,24 +9,27 @@ keywords = ["fritz", "fritzbox", "fritz!box", "log", "database"]
 [dependencies]
 anyhow = { version = "1" }
 chrono = { version = "0", features = ["serde"] }
+csv = { version = "1" }
 dotenv = { version = "0" }
+futures-util = { version = "0" }
 hex = { version = "0" }
 lazy-regex = { version = "2" }
 log = { version = "0", features = ["release_max_level_info"] }
 parking_lot = { version = "0" }
 pbkdf2 = { version = "0" }
 quick-xml = { version = "0", features = ["serialize"] }
+rand = { version = "0" }
 reqwest = { version = "0", default-features = false, features = ["rustls-tls", "multipart", "json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 sha2 = { version = "0" }
 simplelog = { version = "0" }
+structopt = { version = "0" }
 surge-ping = { version = "0" }
 tokio = { version = "1", features = ["rt", "macros", "fs", "process", "signal"] }
 
 # https://github.com/launchbadge/sqlx/issues/191#issuecomment-649464197
-sqlx = { version = "0", features = ["sqlite", "runtime-tokio"] }
-libsqlite3-sys = { version = "*", features = ["bundled"] }
+sqlx = { version = "0", features = ["postgres", "runtime-tokio", "chrono"] }
 
 # https://github.com/launchbadge/sqlx/tree/main#compile-time-verification
 [profile.dev.package.sqlx-macros]
